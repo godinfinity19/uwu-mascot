@@ -98,5 +98,5 @@ const UWU_ANIM = (() => {
     return { pose, face, seed };
   }
 
-  return { FPS, DURATION, SEQUENCE, state };
+  return { FPS, DURATION, SEQUENCE, state, blendPose, blendFace, easeInOut, easeOutBack };
 })();

@@ -425,13 +425,31 @@ const UWU = (() => {
     brush.noWash();
   }
 
+  // "final" uses p5.brush watercolour fills; "fast" fakes them with a few jittered,
+  // see-through washes (about 40x quicker, used for animation frames).
+  let quality = "final";
+
   function paint(pts, color, alpha = 170, bleed = 0.06, texture = 0.35, border = 0.25) {
+    if (quality === "fast") return softPaint(pts, color, alpha, bleed);
     clearState();
     brush.fill(color, alpha);
     brush.fillBleed(bleed, "in");
     brush.fillTexture(texture, border);
     brush.polygon(pts);
     brush.noFill();
+  }
+
+  function softPaint(pts, color, alpha, bleed) {
+    const n = pts.length;
+    const cx = pts.reduce((a, p) => a + p[0], 0) / n, cy = pts.reduce((a, p) => a + p[1], 0) / n;
+    // a watercolour fill lands at roughly half its nominal strength
+    const target = Math.min(0.95, (alpha / 255) * 0.55), layers = 4;
+    const a = 1 - Math.pow(1 - target, 1 / layers);
+    const j = 0.8 + bleed * 12;
+    for (let k = 0; k < layers; k++) {
+      const shrink = 1 - 0.025 * k;
+      wash(pts.map(([x, y]) => [cx + (x - cx) * shrink + rand(-j, j), cy + (y - cy) * shrink + rand(-j, j)]), color, a * 255);
+    }
   }
 
   // Parallel crayon hatching clipped to a shape (angle in radians).
@@ -846,8 +864,9 @@ const UWU = (() => {
 
   // Draw UwU with the ground point at (x, y); s = canvas pixels per rig unit.
   // Every part gets its own seed, so a change in one part never re-rolls another's texture.
-  function draw(x = 0, y = 0, s = 1, { pose = NEUTRAL, face: f = {}, seed = 19 } = {}) {
+  function draw(x = 0, y = 0, s = 1, { pose = NEUTRAL, face: f = {}, seed = 19, quality: q = "final" } = {}) {
     ensureBrushes();
+    quality = q;
     face = fullFace(f);
     const mode = angleMode();
     angleMode(RADIANS);
@@ -875,5 +894,13 @@ const UWU = (() => {
     }
   }
 
-  return { PALETTE, PIVOTS, PARENT, DRAW_ORDER, NEUTRAL, FACE, EXPRESSIONS, fullFace, draw };
+  // Drawing tools in UwU's style, for props and scenes drawn around the character.
+  const kit = {
+    P: PALETTE, wash, paint, ink, strokes, crayon, smooth, ellipse, band, leaf, star4, rand,
+    setQuality(q) { quality = q; },
+    setSeed(sd) { rng = mulberry32(sd); brush.seed(sd); },
+    ready: ensureBrushes,
+  };
+
+  return { PALETTE, PIVOTS, PARENT, DRAW_ORDER, NEUTRAL, FACE, EXPRESSIONS, fullFace, draw, kit };
 })();

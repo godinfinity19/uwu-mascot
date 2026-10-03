@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>UwU — scenes</title>
+  <script src="https://cdn.jsdelivr.net/npm/p5@2.3.4/lib/p5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/p5.brush@2.2.3/dist/p5.brush.js"></script>
+  <script src="../src/uwu.js"></script>
+  <script src="../src/uwu_anim.js"></script>
+  <script src="../src/uwu_props.js"></script>
+  <script src="../src/uwu_scenes.js"></script>
+  <style>
+    html, body { margin: 0; background: #f9f1e6; font-family: system-ui, sans-serif; color: #52263b; }
+    nav { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; justify-content: center; }
+    nav a { padding: 6px 12px; border: 2px solid #e58fab; border-radius: 999px; color: inherit; text-decoration: none; }
+    nav a.on { background: #e58fab; color: #fff; }
+    main { display: grid; place-items: center; }
+    canvas { max-width: 96vw; height: auto !important; }
+  </style>
+</head>
+<body>
+  <nav id="nav"></nav>
+  <main id="main"></main>
+  <script>
+    // ?scene=<id> plays a scene live; add &still to draw frames only on request (video export).
+    const params = new URLSearchParams(location.search);
+    const id = params.get("scene") || "subscription";
+    const still = params.has("still");
+    const fps = 24;
+    let target = 0;
+
+    async function setup() {
+      window.UWU_FONT = await loadFont("../assets/fonts/DejaVuSans-Bold.ttf");
+      createCanvas(1080, 1080, WEBGL).parent("main");
+      pixelDensity(1);
+      frameRate(fps);
+      if (still) {
+        noLoop();
+        document.getElementById("nav").remove();
+      } else {
+        for (const s of Object.values(UWU_SCENES.SCENES)) {
+          const a = document.createElement("a");
+          a.href = "?scene=" + s.id;
+          a.textContent = s.title;
+          if (s.id === id) a.className = "on";
+          document.getElementById("nav").appendChild(a);
+        }
+      }
+      const sc = UWU_SCENES.SCENES[id];
+      window.UWU_FRAMES = Math.round(sc.duration * fps);
+      window.renderFrame = async (n) => { target = n; await redraw(); };
+      window.UWU_READY = true;
+    }
+
+    function draw() {
+      if (!window.UWU_READY) return;
+      const n = still ? target : frameCount % window.UWU_FRAMES;
+      SCENE_RUNNER.frame(id, n / fps);
+    }
+  </script>
+</body>
+</html>
