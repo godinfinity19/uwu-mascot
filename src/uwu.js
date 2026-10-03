@@ -27,6 +27,8 @@ const UWU = (() => {
     iris: "#4d1634",
     irisDark: "#350e25",
     irisLight: "#b2446f",
+    irisRim: "#c9587f",
+    irisDot: "#f3b6c8",
     pupil: "#40112b",
     shine: "#fffaf2",
     eyeLine: "#4a1229",
@@ -55,8 +57,8 @@ const UWU = (() => {
     crown: [26, -378],
     curl: [-5, -378],
     face: [0, -225],
-    blush_R: [-105, -195],
-    blush_L: [105, -194],
+    blush_R: [-109, -197],
+    blush_L: [112, -199],
     star: [101, -189.5],
     eye_R: [-74, -234],
     eye_L: [74, -234],
@@ -141,19 +143,22 @@ const UWU = (() => {
 
   // Big curl (crest): stem rising from the head, sweeping to screen-left into a knob.
   const CURL = [
-    [-44, -365], [-42, -382], [-41, -397], [-44, -409], [-49, -419], [-59, -426],
+    [-38, -358], [-42, -382], [-41, -397], [-44, -409], [-49, -419], [-59, -426],
     [-62, -416], [-66, -405], [-73, -392], [-88, -384], [-105, -386], [-119, -399],
     [-126, -419], [-125, -439], [-112, -456], [-93, -475], [-68, -488], [-38, -495],
     [-8, -489], [13, -474], [25, -457], [26, -437], [25, -429], [24, -417], [22, -395],
     [21, -372], [17, -352],
   ];
-  // Right stem edge, over the top, round the knob and down the inner stem edge.
+  // Screen-right stem edge, over the top, round the knob and down the screen-left stem edge.
   const CURL_OUTLINE = CURL.slice(2, 25).reverse();
   const CURL_KNOB = [-81, -414];
+  // Share of curl.rot taken by each CURL vertex: 0 where the stem meets the head,
+  // 1 round the outer loop and the knob.
+  const CURL_BEND = [0, 0, 0, 0.1, 0.3, 0.8, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0.85, 0.65, 0.45, 0.25, 0.15, 0.05, 0, 0, 0];
 
-  // Small flame-shaped crown tuft, tucked behind the right edge of the curl stem.
+  // Small flame-shaped crown tuft, tucked behind the curl stem's screen-right (character's left) edge.
   const CROWN = [
-    [20, -378], [21, -395], [23, -412], [25, -428], [31, -442], [39, -453], [46, -446],
+    [12, -378], [14, -395], [23, -412], [25, -428], [31, -442], [39, -453], [46, -446],
     [51, -436], [53, -424], [51, -411], [47, -402], [41, -393], [33, -386], [25, -380],
   ];
   const CROWN_OUTLINE = [
@@ -168,7 +173,6 @@ const UWU = (() => {
     [177, -302], [164, -295], [152, -297], [148, -303], [136, -310], [121, -308],
     [111, -304], [109, -293], [106, -285], [92, -285],
   ];
-  const TUFT_OUTLINE = TUFT.slice(1, 21);
 
   // Torso and legs. The legs run down to y = -6 so they stay tucked into the feet
   // when the body leans; the character's left leg sits a little closer to the centre.
@@ -192,11 +196,12 @@ const UWU = (() => {
   const TAIL = [[66, -66], [80, -66], [94, -62], [101, -55], [99, -50], [90, -45], [80, -40], [72, -37], [64, -42]];
 
   // Collar fluff: [base, tip, width, colour]; the back petal is drawn first.
-  const RUFF_R = [
-    [[-36, -149], [-90, -126], 25, "lavender"],
-    [[-34, -147], [-49, -97], 26, "pinkDeep"],
+  const RUFF = [
+    [[-42, -150], [-91, -123], 20, "purple"],
+    [[42, -150], [86, -119], 20, "purple"],
+    [[-39, -150], [-49, -95], 24, "rose"],
+    [[39, -150], [49, -95], 24, "rose"],
   ];
-  const RUFF = RUFF_R.flatMap(([b, t, w, c]) => [[b, t, w, c], [[-b[0], b[1]], [-t[0], t[1]], w, c]]);
 
   // Eye outline for the character's right eye in (u, v): u outward from the eye pivot,
   // v down. It is the white of the eye joined with the iris, as in the reference.
@@ -294,9 +299,29 @@ const UWU = (() => {
       return [bx + dx * t + nx * off, by + dy * t + ny * off];
     };
     return [
-      at(0, -w * 0.3), at(0.35, -w * 0.45), at(0.75, -w * 0.5), at(0.95, -w * 0.3), at(1, 0),
-      at(0.95, w * 0.3), at(0.75, w * 0.5), at(0.35, w * 0.45), at(0, w * 0.3),
+      at(0, -w * 0.35), at(0.3, -w * 0.5), at(0.6, -w * 0.45), at(0.85, -w * 0.28), at(1, 0),
+      at(0.85, w * 0.28), at(0.6, w * 0.45), at(0.3, w * 0.5), at(0, w * 0.35),
     ];
+  }
+
+  // Rotates points about the curl pivot by rot × the bend weight of the nearest curl vertices.
+  function bend(pts, rot) {
+    if (!rot) return pts;
+    const [px, py] = PIVOTS.curl;
+    const nodes = [...CURL.map(([x, y], i) => [x, y, CURL_BEND[i]]), [CURL_KNOB[0], CURL_KNOB[1], 1]];
+    return pts.map((p) => {
+      const near = nodes.map(([x, y, w]) => [Math.hypot(p[0] - x, p[1] - y), w]).sort((a, b) => a[0] - b[0]).slice(0, 3);
+      let sw = 0, sv = 0;
+      for (const [d, w] of near) {
+        const k = 1 / Math.max(d, 1e-3) ** 2;
+        sw += k;
+        sv += k * w;
+      }
+      const a = rot * (sv / sw), c = Math.cos(a), sn = Math.sin(a);
+      const dx = p[0] - px, dy = p[1] - py;
+      const q = [px + dx * c - dy * sn, py + dx * sn + dy * c];
+      return p.length > 2 ? [...q, p[2]] : q;
+    });
   }
 
   // Four-point star; only its vertical axis leans by `tilt`, the side points stay level.
@@ -369,22 +394,30 @@ const UWU = (() => {
   }
 
   // Sketchy line: a main pass plus a thinner, lighter strand slightly offset.
-  // uwu_ink lines taper at both ends unless the points carry their own pressure.
-  function ink(pts, w = 2.1, { closed = false, steps = 5, second = true, color = PALETTE.ink, tip = "uwu_ink" } = {}) {
+  // uwu_ink lines taper at the ends in `taper` unless the points carry their own pressure.
+  function ink(pts, w = 2.1, { closed = false, steps = 5, second = true, color = PALETTE.ink, tip = "uwu_ink", taper = [true, true] } = {}) {
     clearState();
     let d = smooth(pts, closed, steps);
     if (closed) d.push(d[0].slice());
     if (tip === "uwu_ink" && !closed && d[0].length === 2) {
-      d = d.map(([x, y], i) => [x, y, Math.min(1, 0.45 + 0.28 * Math.min(i, d.length - 1 - i))]);
+      const n = d.length - 1;
+      d = d.map(([x, y], i) => [x, y, Math.min(1, 0.45 + 0.28 * Math.min(taper[0] ? i : n, taper[1] ? n - i : n))]);
     }
-    brush.set(tip, color, w);
+    brush.set(tip, color, second ? w * 0.8 : w);
     brush.spline(d, 0);
     if (second && d.length > 6) {
-      const ox = rand(-1.8, 1.8), oy = rand(-1.8, 1.8);
       const a = Math.floor(d.length * rand(0.02, 0.12));
       const b = Math.ceil(d.length * rand(0.85, 0.98));
-      brush.set(tip, PALETTE.inkSoft, w * 0.5);
-      brush.spline(d.slice(a, b).map(([x, y, p]) => (p === undefined ? [x + ox, y + oy] : [x + ox, y + oy, p])), 0);
+      const seg = d.slice(a, b), side = rng() < 0.5 ? -1 : 1, amp = rand(2.2, 3.2);
+      const off = seg.map(([x, y, p], i) => {
+        const q0 = seg[Math.max(0, i - 1)], q1 = seg[Math.min(seg.length - 1, i + 1)];
+        const nx = q0[1] - q1[1], ny = q1[0] - q0[0], L = Math.hypot(nx, ny) || 1;
+        const k = side * amp * Math.sin(Math.PI * i / (seg.length - 1));
+        const q = [x + (nx / L) * k, y + (ny / L) * k];
+        return p === undefined ? q : [...q, p];
+      });
+      brush.set(tip, nudge(color), w * 0.4);
+      brush.spline(off, 0);
     }
   }
 
@@ -406,11 +439,12 @@ const UWU = (() => {
 
   const PARTS = {
     shadow() {
-      paint(ellipse(8, -1, 122, 7, 48), P.shadow, 110, 0.15, 0.6, 0.15);
-      paint(ellipse(6, -1, 92, 4.5, 40), P.shadowDeep, 150, 0.1, 0.6, 0.2);
+      wash(ellipse(8, -1, 122, 7, 96), P.shadow, 50);
+      wash(ellipse(7, -1, 104, 5.5, 96), P.shadow, 50);
+      wash(ellipse(6, -1, 86, 4, 80), P.shadowDeep, 90);
       crayon(ellipse(6, -2, 110, 6, 40), P.shadowDeep, 2.2, 0, 1.4, 0.5);
-      paint(ellipse(-52, 1, 30, 4, 32), P.shadowDeep, 170, 0.05, 0.4, 0.3);
-      paint(ellipse(47, 1, 30, 4, 32), P.shadowDeep, 170, 0.05, 0.4, 0.3);
+      wash(ellipse(-52, 1, 30, 4, 40), P.shadowDeep, 120);
+      wash(ellipse(47, 1, 30, 4, 40), P.shadowDeep, 120);
     },
 
     tail() {
@@ -419,7 +453,7 @@ const UWU = (() => {
       paint(shape, P.lavender, 110, 0.06, 0.4, 0.3);
       paint(band([[72, -37], [80, -40], [90, -45], [99, -50], [101, -55]], [84, -54], 8), P.purple, 200);
       strokes(along([[80, -64], [94, -60], [100, -54]], [84, -50], [4]), P.lavender, 2.6);
-      ink(TAIL.slice(2, 8), 2);
+      ink(TAIL.slice(0, 8), 2);
     },
 
     body() {
@@ -452,14 +486,16 @@ const UWU = (() => {
 
     foot_R() { foot(-1); },
     foot_L() { foot(1); },
-    arm_R() { arm(-1); },
-    arm_L() { arm(1); },
+    arm_R(t) { arm(-1, t); },
+    arm_L(t) { arm(1, t); },
 
     ruff() {
       for (const [base, tip, w, c] of RUFF) {
         const pts = leaf(base, tip, w, 0.05 * Math.sign(tip[0]));
         wash(smooth(pts, true, 5), P[c]);
-        paint(band(pts.slice(0, 5), base, w * 0.4), c === "lavender" ? P.purple : P.lavender, 160);
+        // darker rim along the upper / outer edge on both sides
+        const edge = tip[0] < 0 ? pts.slice(4).reverse() : pts.slice(0, 5);
+        wash(band(edge, base, w * 0.4), c === "purple" ? P.purpleDeep : P.lavender, 120);
         const hl = [0.3, 0.6].map((t) => [base[0] + (tip[0] - base[0]) * t, base[1] + (tip[1] - base[1]) * t]);
         strokes([hl], P.peach, 2.4);
         ink(pts, 1.9);
@@ -483,56 +519,57 @@ const UWU = (() => {
         [[100, -335], [118, -352], [145, -358], [165, -350]],
         [[108, -325], [128, -338], [155, -340], [174, -330]],
       ], P.creamLight, 2.4);
-      ink(TUFT_OUTLINE, 2.2);
+      ink(TUFT, 2.2);
       ink([[169, -357], [162, -356], [157, -354]], 1.6, { second: false });
     },
 
     crown() {
-      wash(smooth(CROWN, true), P.peach);
-      paint(smooth(CROWN, true), P.pink, 170, 0.12, 0.3, 0.05);
+      const crownShape = [...smooth(CROWN.slice(0, 6), false), ...smooth([...CROWN.slice(5), CROWN[0]], false)];
+      wash(crownShape, P.peach);
+      paint(crownShape, P.pink, 170, 0.12, 0.3, 0.05);
       paint(band([[41, -393], [47, -402], [51, -411], [53, -424], [51, -436], [46, -446], [39, -453]], [34, -420], 15), P.pink, 255, 0.1, 0.3, 0.1);
       paint(band([[47, -402], [51, -411], [53, -424], [51, -436], [46, -446]], [36, -420], 7), P.pinkDeep, 200);
-      strokes([[[42, -444], [46, -425], [40, -402]]], P.pinkDeep, 1.4);
-      ink(CROWN_OUTLINE, 2);
+      ink([[42, -444, 0.5], [46, -425, 1], [40, -402, 0.4]], 1.1, { second: false, color: P.pinkDeep, tip: "uwu_face" });
+      ink(CROWN_OUTLINE.slice(0, 10), 2, { taper: [false, true] });
+      ink(CROWN_OUTLINE.slice(9), 2);
     },
 
-    curl() {
-      wash(smooth(CURL, true), P.peach);
+    curl(t) {
+      // curl.rot bends the curl about its pivot; the stem base stays fixed in the head
+      const B = (pts) => bend(pts, t.rot || 0);
+      wash(B(smooth(CURL, true)), P.peach);
       // saturated pink along the outer arc
-      const ARC = [[-15, -490], [-38, -495], [-68, -488], [-93, -475], [-112, -456], [-125, -439], [-126, -425]];
-      paint(band(ARC, [-70, -435], 52), P.rose, 250, 0.12, 0.3, 0.1);
-      paint(band(ARC, [-70, -435], 28), P.pinkDeep, 235, 0.08, 0.35, 0.15);
-      // lavender / purple only where the arm wraps round and under the knob
-      const WRAP = [[-126, -425], [-119, -399], [-105, -386], [-88, -384], [-73, -392], [-66, -405]];
-      paint(band(WRAP, CURL_KNOB, 22), P.lavender, 245, 0.1, 0.3, 0.1);
-      paint(band(WRAP, CURL_KNOB, 15), P.purple, 210, 0.06, 0.35, 0.15);
-      paint(band([[-98, -432], [-82, -438], [-66, -434], [-52, -424], [-42, -410]], [-55, -470], 14), P.lavender, 190);
-      paint(band([[-59, -426], [-49, -419], [-44, -409], [-41, -397], [-42, -382]], [-10, -400], 12), P.lavender, 190);
-      paint(band([[16, -455], [20, -430], [16, -405], [10, -385]], [-20, -420], 14), P.creamLight, 160);
-      // knob: flat purple disc with hatching in its upper-right quarter
-      paint(ellipse(CURL_KNOB[0] - 2, CURL_KNOB[1] + 3, 24, 22, 32), P.lavender, 220, 0.12, 0.3, 0.05);
-      wash(ellipse(CURL_KNOB[0], CURL_KNOB[1], 19, 18, 32), P.purple, 215);
-      strokes([
-        [[-74, -430], [-66, -424], [-63, -414]],
-        [[-78, -428], [-70, -421], [-67, -412]],
-        [[-82, -426], [-74, -419], [-71, -410]],
-      ], P.purpleDeep, 1.6);
-      strokes([
-        [[18, -445], [8, -470], [-18, -485], [-50, -486], [-80, -474]],
-        [[6, -425], [-4, -452], [-28, -467], [-60, -464]],
-      ], P.pinkDeep, 1.5);
+      const ARC = [[8, -482], [-8, -489], [-38, -495], [-68, -488], [-93, -475], [-112, -456], [-125, -439], [-126, -425]];
+      for (const d of [40, 28, 16]) wash(B(band(ARC, [-60, -430], d)), P.rose, 75);
+      for (const d of [20, 10]) wash(B(band(ARC, [-60, -430], d)), P.pinkDeep, 85);
+      // lavender / purple where the arm wraps round and under the knob
+      const WRAP = [[-112, -456], [-125, -439], [-126, -419], [-119, -399], [-105, -386], [-88, -384], [-73, -392], [-66, -405]];
+      wash(B(band(WRAP, CURL_KNOB, 28)), P.lavender, 210);
+      wash(B(band(WRAP, CURL_KNOB, 15)), P.purple, 150);
+      wash(B(band([[-98, -432], [-82, -438], [-66, -434], [-52, -424], [-42, -410]], [-55, -470], 14)), P.lavender, 120);
+      // shaded inner edge of the stem
+      const STEM_IN = [[-59, -426], [-50, -421], [-45, -411], [-42, -398], [-42, -384]];
+      wash(B(band(STEM_IN, [-10, -405], 14)), P.lavender, 200);
+      wash(B(band(STEM_IN, [-10, -405], 8)), P.purpleDeep, 190);
+      wash(B(band([[16, -455], [20, -430], [16, -405], [10, -385]], [-20, -420], 14)), P.creamLight, 120);
+      // knob: purple disc with hatching in its upper-right quarter
+      paint(B(ellipse(CURL_KNOB[0] - 2, CURL_KNOB[1] + 3, 24, 22, 32)), P.lavender, 220, 0.12, 0.3, 0.05);
+      wash(B(ellipse(CURL_KNOB[0], CURL_KNOB[1], 19, 18, 32)), P.purple, 215);
+      for (const h of [[[-74, -430], [-66, -424], [-63, -414]], [[-78, -428], [-70, -421], [-67, -412]], [[-82, -426], [-74, -419], [-71, -410]]]) {
+        ink(B(h.map(([x, y], i) => [x, y, [0.7, 1, 0.5][i]])), 1.3, { second: false, color: P.purpleDeep, tip: "uwu_face" });
+      }
       strokes([
         [[-2, -470], [-8, -440], [-6, -410], [-2, -385]],
         [[10, -462], [8, -432], [10, -402]],
         [[-22, -482], [-32, -462], [-34, -432]],
-      ], P.creamLight, 3.5);
-      ink(CURL_OUTLINE, 2.4);
+      ].map((l) => B(smooth(l, false, 4))), P.creamLight, 3.5);
+      ink(B(CURL_OUTLINE), 2.4, { taper: [true, false] });
       // the spiral line leaves the hook, runs over the knob top, round its left side and under it
-      ink(ellipse(CURL_KNOB[0], CURL_KNOB[1], 19, 18, 30, -0.25, -0.25 - Math.PI * 1.75)
-        .map(([x, y], i, a) => [x, y, 1.15 - 0.75 * i / (a.length - 1)]), 2);
-      // hatched inner edge of the stem
-      ink([[-47, -414], [-41, -402], [-38, -388], [-39, -374]], 1.1, { second: false, color: P.purpleDeep });
-      ink([[-43, -410], [-36, -398], [-34, -384]], 0.9, { second: false, color: P.purpleDeep });
+      ink(B(ellipse(CURL_KNOB[0], CURL_KNOB[1], 19, 18, 30, -0.25, -0.25 - Math.PI * 1.75)
+        .map(([x, y], i, a) => [x, y, 1.15 - 0.75 * i / (a.length - 1)])), 2);
+      // hatching just inside the stem's inner edge
+      ink(B([[-44, -419], [-39, -409], [-37, -399]]), 0.9, { second: false, color: P.purple });
+      ink(B([[-40, -415], [-35, -405], [-33, -398]]), 0.8, { second: false, color: P.purple });
     },
 
     head() {
@@ -540,9 +577,14 @@ const UWU = (() => {
       wash(shape, P.cream);
       crayon(shape, P.peach, 7, Math.PI * 0.3, 1.2, 0.5);
       // stem colour carried down into the head, so the curl grows out of it
-      wash(smooth([[-38, -398], [-14, -404], [6, -402], [21, -389], [20, -381], [0, -385], [-20, -389], [-40, -390]], true), P.peach, 255);
-      paint(smooth([[-40, -392], [-16, -390], [4, -387], [21, -383], [16, -368], [-4, -362], [-26, -366], [-42, -378]], true), P.peach, 150, 0.2, 0.3, 0.02);
-      paint(band(HEAD_TOP_R, [0, -360], 14), P.lavender, 200);
+      wash(smooth([[-40, -397], [-14, -404], [6, -402], [21, -389], [12, -382], [-2, -376], [-14, -372], [-28, -374], [-41, -384]], true), P.peach, 255);
+      paint(ellipse(-12, -370, 30, 15, 32), P.peach, 255, 0.2, 0.3, 0.02);
+      paint(ellipse(-26, -372, 14, 16, 28), P.pink, 200, 0.15, 0.3, 0.02);
+      const STEM_IN_HEAD = [[-45, -410], [-41, -396], [-42, -384], [-44, -372], [-48, -361], [-57, -347], [-73, -330]];
+      wash(band(STEM_IN_HEAD, [0, -372], 13), P.lavender, 190);
+      wash(band(STEM_IN_HEAD.slice(0, 5), [0, -372], 7), P.purpleDeep, 170);
+      ink([[-38, -396], [-35, -384], [-35, -372], [-39, -360]], 0.9, { second: false, color: P.purple });
+      ink([[-32, -397], [-29, -386], [-29, -375], [-32, -366]], 0.8, { second: false, color: P.purple });
       paint(smooth([[18, -382], [28, -378], [31, -362], [22, -352], [14, -362]], true), P.pink, 120, 0.2, 0.3, 0.02);
       strokes([
         [[-30, -398], [-33, -380], [-40, -360]],
@@ -551,21 +593,23 @@ const UWU = (() => {
       ], P.rose, 1.6);
       // pink / lavender rims on both cheeks; the underside stays cream with a grey shade
       const rimR = HEAD_SIDE_R.slice(1, 11), rimL = HEAD_SIDE_L.slice(2, 12);
-      paint(band(rimR, [-30, -230], 40), P.pink, 200);
-      paint(band(rimL, [30, -230], 40), P.pink, 200);
-      paint(band(HEAD_SIDE_R.slice(3, 11), [-50, -215], 18), P.lavender, 180);
-      paint(band(HEAD_SIDE_L.slice(2, 10), [50, -215], 18), P.lavender, 180);
+      wash(band(rimR, [-30, -230], 26), P.pink, 110);
+      wash(band(rimL, [30, -230], 24), P.pink, 110);
+      wash(band(rimR, [-30, -230], 15), P.pink, 200);
+      wash(band(rimL, [30, -230], 13), P.pink, 200);
+      wash(band(HEAD_SIDE_R.slice(3, 11), [-50, -215], 9), P.lavender, 150);
+      wash(band(HEAD_SIDE_L.slice(2, 10), [50, -215], 8), P.lavender, 150);
       // deeper mauve where the cheeks turn under
-      paint(band(HEAD_SIDE_R.slice(6, 12), [-90, -200], 16), P.lavender, 220, 0.12, 0.35, 0.1);
-      paint(band(HEAD_SIDE_L.slice(1, 7), [90, -200], 14), P.pinkDeep, 200, 0.12, 0.35, 0.1);
-      paint(band([[-127, -169], [-104, -157], [-72, -151], [-35, -149], [0, -148], [35, -149], [72, -151], [104, -157], [127, -166]], [0, -200], 8), P.shadow, 70);
+      for (const d of [14, 7]) wash(band(HEAD_SIDE_R.slice(6, 12), [-90, -200], d), P.lavender, 70);
+      for (const d of [12, 6]) wash(band(HEAD_SIDE_L.slice(1, 7), [90, -200], d), P.pinkDeep, 70);
+      wash(band([[-127, -169], [-104, -157], [-72, -151], [-35, -149], [0, -148], [35, -149], [72, -151], [104, -157], [127, -166]], [0, -200], 8), P.shadow, 50);
       paint(ellipse(0, -262, 60, 52, 36), P.creamLight, 70, 0.25, 0.2, 0);
       strokes([...along(rimR, [-30, -230], [6, 18, 30]), ...along(rimL, [30, -230], [6, 18, 28])], P.pinkDeep, 2.8);
       strokes([...along(HEAD_SIDE_R.slice(3, 9), [-60, -220], [4]), ...along(HEAD_SIDE_L.slice(4, 10), [60, -220], [4])], P.lavender, 2.4);
       // outline: broken under the chin, open where the curl, crown and side tuft leave the head
-      ink([...HEAD_TOP_R, ...HEAD_SIDE_R.slice(0, -1), [-28, -149]], 2.4);
-      ink([[20, -149], ...HEAD_SIDE_L.slice(1, 11), [109, -292]], 2.4);
-      ink([[86, -316], ...HEAD_TOP_L], 2.2);
+      ink([...HEAD_TOP_R, ...HEAD_SIDE_R.slice(0, -1), [-28, -149]], 2.4, { taper: [false, true] });
+      ink([[20, -149], ...HEAD_SIDE_L.slice(1, 11), [109, -292]], 2.4, { taper: [true, false] });
+      ink([[86, -316], ...HEAD_TOP_L], 2.2, { taper: [true, false] });
     },
 
     blush_R() { blush(-1); },
@@ -602,30 +646,37 @@ const UWU = (() => {
     ink(side([[-48, -11], [-49, -6], [-48, -1]]), 1.2, { second: false });
   }
 
-  function arm(s) {
+  function arm(s, t = {}) {
     const side = (pts) => (s < 0 ? pts : mirror(pts));
     const pts = side(ARM_R);
     wash(smooth(pts, true), P.cream);
-    wash(smooth(pts, true), P.pink, 175);
-    paint(band(side([[-127, -85], [-124, -74], [-117, -66], [-103, -60], [-89, -59], [-78, -63], [-62, -67]]), [95 * s, -92], 14), P.lavender, 255, 0.1, 0.3, 0.1);
-    paint(band(side([[-70, -123], [-62, -112], [-60, -90], [-62, -70]]), [84 * s, -92], 15), P.cream, 230, 0.15, 0.3, 0.02);
+    // pink outside the crease; the root behind it stays cream and blends into the body
+    wash(smooth(side([
+      [-62, -126], [-70, -123], [-80, -117], [-91, -110], [-103, -107], [-116, -103], [-123, -96],
+      [-127, -85], [-124, -74], [-117, -66], [-103, -60], [-89, -59], [-79, -62], [-73, -74],
+      [-69, -86], [-67, -96], [-65, -110],
+    ]), true), P.pink, 175);
+    paint(band(side([[-127, -85], [-124, -74], [-117, -66], [-103, -60], [-89, -59], [-78, -63]]), [95 * s, -92], 14), P.lavender, 255, 0.1, 0.3, 0.1);
     strokes([
       [[-78, -114], [-96, -109], [-116, -101]],
       [[-82, -100], [-102, -97], [-121, -90]],
     ].map(side), P.creamLight, 3);
     paint(band(side([[-124, -74], [-117, -66], [-103, -60], [-89, -59], [-78, -63]]), [98 * s, -84], 8), P.purple, 190, 0.06, 0.35, 0.15);
     strokes([[[-84, -72], [-102, -68], [-119, -74]]].map(side), P.purple, 2.4);
-    ink(pts.slice(1, 13), 2);
+    // a raised arm (arm_R +rot, arm_L -rot) swings its root out of the body, so ink it too
+    const raised = -s * (t.rot || 0) > 0.15;
+    ink(pts.slice(1, raised ? 14 : 13), 2);
     // crease where the arm root overlaps the body, and fur at the tip
-    ink(side([[-64, -104], [-67, -92], [-71, -80], [-77, -66]]), 1.2, { second: false, color: P.inkSoft });
+    ink(side([[-67, -96], [-69, -86], [-73, -74], [-79, -62]]), 1.9, { second: false });
     ink(side([[-127, -86], [-121, -85]]), 1.2, { second: false });
     ink(side([[-124, -73], [-118, -74]]), 1.2, { second: false });
   }
 
   function blush(s) {
     const [cx, cy] = PIVOTS[s < 0 ? "blush_R" : "blush_L"];
-    paint(ellipse(cx, cy, 29, 24, 36), P.blush, 170, 0.2, 0.3, 0.05);
-    paint(ellipse(cx, cy, 21, 17, 32), P.blushDeep, 230, 0.15, 0.3, 0.05);
+    wash(ellipse(cx, cy, 25, 21, 40), P.blush, 150);
+    wash(ellipse(cx, cy, 19, 16, 36), P.blushDeep, 150);
+    paint(ellipse(cx, cy, 22, 18, 32), P.blushDeep, 160, 0.05, 0.3, 0.05);
     strokes([ellipse(cx, cy, 9, 7, 16, 0.3, 5.6), ellipse(cx, cy, 15, 12, 20, 0.4, 5.4)], P.blushDeep, 1.8);
   }
 
@@ -639,14 +690,15 @@ const UWU = (() => {
     wash(ellipse(ix, iy, irx, iry, 36), P.iris);
     wash(band(ellipse(ix, iy, irx, iry, 16, Math.PI * 1.08, Math.PI * 1.92), [ix, iy], 14), P.irisDark, 230);
     wash(band(ellipse(ix, iy, irx - 0.5, iry - 0.5, 16, Math.PI * 0.12, Math.PI * 0.88), [ix, iy], 14), P.irisLight, 235);
-    paint(band(ellipse(ix, iy, irx - 1, iry - 1, 16, Math.PI * 0.2, Math.PI * 0.8), [ix, iy], 5), "#c9587f", 110, 0.05, 0.5, 0.3);
+    paint(band(ellipse(ix, iy, irx - 1, iry - 1, 16, Math.PI * 0.2, Math.PI * 0.8), [ix, iy], 5), P.irisRim, 110, 0.05, 0.5, 0.3);
     wash(ellipse(ix - 2 * s, iy + 4, 10, 11, 24), P.pupil, 150);
     wash(ellipse(ix - 2 * s, iy - 8.5, 2.8, 2.8, 14), P.shine);
-    wash(ellipse(ix + 12 * s, iy + 17, 1.3, 1.3, 10), "#f3b6c8", 150);
+    wash(ellipse(ix + 12 * s, iy + 17, 1.3, 1.3, 10), P.irisDot, 150);
     // heavy upper lid, thickest over the outer top
     ink(SOCKET.slice(0, 12).map((q, i) => [...at(q), LID_PRESSURE[i]]), 2.9, { second: false, tip: "uwu_face" });
     // dark line along the inner side and under the iris, faint warm line under the white
-    ink(SOCKET.slice(11, 19).map(at), 1.6, { second: false, tip: "uwu_face", color: P.eyeLine });
+    const LOW_P = [1.1, 1.05, 1.0, 0.85, 0.6, 0.42, 0.32, 0.28];
+    ink(SOCKET.slice(11, 19).map((q, i) => [...at(q), LOW_P[i]]), 1.6, { second: false, tip: "uwu_face", color: P.eyeLine });
     ink([...SOCKET.slice(18), SOCKET[0]].map((q, i, a) => [...at(q), 0.6 + 0.4 * i / (a.length - 1)]), 1.3, { second: false, tip: "uwu_face", color: P.eyeLineSoft });
     ink([at([25, 22.5]), at([30, 18]), at([34, 12])], 1.4, { second: false, tip: "uwu_face" });
     // two short lashes on the upper-outer lid, and the faint fold above it
@@ -664,6 +716,9 @@ const UWU = (() => {
   // Rig
   // ---------------------------------------------------------------------------
 
+  // Parts whose rot is applied as a bend inside the part instead of a rigid rotation.
+  const BENDS = new Set(["curl"]);
+
   function chain(name) {
     const out = [];
     for (let n = name; n; n = PARENT[n]) out.unshift(n);
@@ -675,7 +730,7 @@ const UWU = (() => {
     if (!t) return;
     const [px, py] = PIVOTS[name];
     translate(px + (t.dx || 0), py + (t.dy || 0));
-    if (t.rot) rotate(t.rot);
+    if (t.rot && !BENDS.has(name)) rotate(t.rot);
     if (t.sx !== undefined || t.sy !== undefined) scale(t.sx ?? 1, t.sy ?? 1);
     translate(-px, -py);
   }
@@ -694,11 +749,13 @@ const UWU = (() => {
         const partSeed = seed * 1009 + k;
         rng = mulberry32(partSeed);
         brush.seed(partSeed);
-        brush.noiseSeed(seed);
         push();
-        for (const n of chain(name)) applyTransform(n, pose);
-        PARTS[name]();
-        pop();
+        try {
+          for (const n of chain(name)) applyTransform(n, pose);
+          PARTS[name](pose[name] || {});
+        } finally {
+          pop();
+        }
       });
     } finally {
       pop();
