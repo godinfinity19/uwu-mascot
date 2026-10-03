@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>UwU — front view, neutral</title>
+  <script src="https://cdn.jsdelivr.net/npm/p5@2.3.4/lib/p5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/p5.brush@2.2.3/dist/p5.brush.js"></script>
+  <script src="../src/uwu.js"></script>
+  <style>
+    html, body { margin: 0; min-height: 100vh; background: #f9f1e6; display: grid; place-items: center; }
+  </style>
+</head>
+<body>
+  <script>
+    // Review page: one still of the neutral front view on paper.
+    function setup() {
+      createCanvas(1080, 1080, WEBGL);
+      pixelDensity(1);
+      background("#f9f1e6");
+      UWU.draw(0, 450, 1.8);
+      noLoop();
+      window.UWU_READY = true;
+    }
+  </script>
+</body>
+</html>
