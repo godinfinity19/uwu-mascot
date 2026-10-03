@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>UwU — six expressions</title>
+  <script src="https://cdn.jsdelivr.net/npm/p5@2.3.4/lib/p5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/p5.brush@2.2.3/dist/p5.brush.js"></script>
+  <script src="../src/uwu.js"></script>
+  <style>
+    html, body { margin: 0; background: #f9f1e6; font-family: system-ui, sans-serif; color: #52263b; }
+    .wrap { position: relative; width: 1620px; margin: 0 auto; }
+    .label { position: absolute; width: 540px; text-align: center; font-size: 22px; }
+  </style>
+</head>
+<body>
+  <div class="wrap" id="wrap"></div>
+  <script>
+    // Review page: the six expressions of docs/UWU_RIG_SPEC.md §8, front view.
+    const NAMES = ["neutral", "happy", "uwu", "surprised", "sad", "shy"];
+    function setup() {
+      const c = createCanvas(1620, 1240, WEBGL);
+      c.parent("wrap");
+      pixelDensity(1);
+      background("#f9f1e6");
+      NAMES.forEach((name, i) => {
+        const col = i % 3, row = Math.floor(i / 3);
+        const { pose, face } = UWU.EXPRESSIONS[name];
+        UWU.draw(-540 + col * 540, -50 + row * 620, 1.05, { pose, face });
+        const l = document.createElement("div");
+        l.className = "label";
+        l.style.left = col * 540 + "px";
+        l.style.top = row * 620 + 580 + "px";
+        l.textContent = name;
+        document.getElementById("wrap").appendChild(l);
+      });
+      noLoop();
+      window.UWU_READY = true;
+    }
+  </script>
+</body>
+</html>

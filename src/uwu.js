@@ -119,6 +119,56 @@ const UWU = (() => {
   // (radians, scale factors, rig-unit offsets); missing fields mean identity.
   const NEUTRAL = {};
 
+  // Face fields (spec §8). Missing fields fall back to these neutral values.
+  const FACE = {
+    eye: { shape: "open", open: 1, iris: 1, gaze: [0, 0], shine: 0 },
+    brow: { dy: 0, tilt: 0 },
+    mouth: { shape: "smile", width: 1, open: 0 },
+    blush: 1,
+    star: 1,
+  };
+
+  const deg = (d) => (d * Math.PI) / 180;
+
+  // The first six expressions (spec §8): a pose plus face fields.
+  const EXPRESSIONS = {
+    neutral: { pose: {}, face: {} },
+    happy: {
+      pose: {
+        body: { sy: 0.96, sx: 1.04 }, curl: { rot: deg(8) }, tuft_L: { rot: deg(-12) },
+        arm_R: { rot: deg(20) }, arm_L: { rot: deg(-20) }, star: { sx: 1.1, sy: 1.1 },
+      },
+      face: { eye: { shape: "arcHappy" }, brow: { dy: -4 }, mouth: { shape: "openSmile", width: 1.15, open: 0.5 }, blush: 1.3, star: 1.1 },
+    },
+    uwu: {
+      pose: { head: { rot: deg(6) }, crown: { rot: deg(10) } },
+      face: { eye: { shape: "arcU" }, brow: { dy: -2, tilt: 6 }, mouth: { shape: "w", width: 0.9 }, blush: 1.5, star: 1.15 },
+    },
+    surprised: {
+      pose: { body: { sy: 1.06, sx: 0.95 }, curl: { rot: deg(15) }, tuft_L: { rot: deg(-20) } },
+      face: { eye: { open: 1.15, iris: 0.75, shine: 1 }, brow: { dy: -8 }, mouth: { shape: "o", open: 0.6 }, blush: 0.8, star: 1.25 },
+    },
+    sad: {
+      pose: { head: { dy: 4 }, curl: { rot: deg(-18) }, tuft_L: { rot: deg(22) }, arm_R: { rot: deg(-15) }, arm_L: { rot: deg(15) } },
+      face: { eye: { open: 0.8, gaze: [0, 3], shine: 2 }, brow: { dy: -2, tilt: 18 }, mouth: { shape: "frown", width: 0.8 }, blush: 0.6, star: 0.9 },
+    },
+    shy: {
+      pose: { head: { rot: deg(-5) }, face: { dx: -4 }, arm_R: { rot: deg(-25), dx: 10 }, arm_L: { rot: deg(25), dx: -10 }, tail: { rot: deg(15) } },
+      face: { eye: { open: 0.85, gaze: [-5, 2] }, brow: { tilt: 8 }, mouth: { shape: "wavy", width: 0.7 }, blush: 1.6 },
+    },
+  };
+
+  function fullFace(f = {}) {
+    return {
+      eye: { ...FACE.eye, ...(f.eye || {}) },
+      brow: { ...FACE.brow, ...(f.brow || {}) },
+      mouth: { ...FACE.mouth, ...(f.mouth || {}) },
+      blush: f.blush ?? FACE.blush,
+      star: f.star ?? FACE.star,
+    };
+  }
+  let face = fullFace();
+
   // ---------------------------------------------------------------------------
   // Geometry (rig units)
   // ---------------------------------------------------------------------------
@@ -617,7 +667,8 @@ const UWU = (() => {
 
     star() {
       const [cx, cy] = PIVOTS.star;
-      const shape = smooth(star4(cx, cy, 16, 19.5, 6.8, 0.22), true, 5);
+      const k = face.star;
+      const shape = smooth(star4(cx, cy, 16 * k, 19.5 * k, 6.8 * k, 0.22), true, 5);
       wash(shape, P.star, 240);
       paint(shape, P.starDeep, 90, 0.02, 0.5, 0.6);
     },
@@ -628,8 +679,28 @@ const UWU = (() => {
     brow_L() { brow(1); },
 
     mouth() {
-      ink([[-19.5, -199.6, 1.15], [-16, -196.4, 1], [-11, -193.2, 1], [-5, -191.1, 1], [1.5, -190.3, 1],
-        [8, -191.2, 1], [14, -193.4, 1], [18.5, -196, 1], [22, -199.4, 1.15]], 2.6, { second: false, tip: "uwu_face" });
+      const { shape, width, open } = face.mouth;
+      const [mx, my] = PIVOTS.mouth;
+      const X = (pts) => pts.map(([x, y, p]) => (p === undefined ? [mx + (x - mx) * width, y] : [mx + (x - mx) * width, y, p]));
+      const line = (pts) => ink(X(pts), 2.6, { second: false, tip: "uwu_face" });
+      if (shape === "smile" || shape === "frown") {
+        const pts = [[-19.5, -199.6, 1.15], [-16, -196.4, 1], [-11, -193.2, 1], [-5, -191.1, 1], [1.5, -190.3, 1],
+          [8, -191.2, 1], [14, -193.4, 1], [18.5, -196, 1], [22, -199.4, 1.15]];
+        line(shape === "smile" ? pts : pts.map(([x, y, p]) => [x, 2 * -195 - y, p]));
+      } else if (shape === "w") {
+        line([[-17, -198, 0.8], [-12, -193, 1], [-6, -191.5, 1], [1.5, -195.5, 1], [9, -191.5, 1], [15, -193, 1], [20, -198, 0.8]]);
+      } else if (shape === "wavy") {
+        line([[-14, -195, 0.8], [-9, -197.5, 1], [-3, -194.5, 1], [3, -197.5, 1], [9, -194.5, 1], [14, -196.5, 0.8]]);
+      } else {
+        // open mouths: dark plum inside, pink tongue at the bottom
+        const outline = shape === "o"
+          ? ellipse(mx, -191, 6 * width + 1, 4 + 8 * open, 28)
+          : smooth(X([[-19, -198], [1.5, -196.5], [22, -198], [16, -192 + 10 * open], [1.5, -189 + 14 * open], [-13, -192 + 10 * open]]), true, 6);
+        wash(outline, "#5a1a35");
+        const bottom = Math.max(...outline.map((q) => q[1]));
+        wash(ellipse(mx, bottom - 2.5 - 2 * open, 7 * width, 2.5 + 2 * open, 20), P.blushDeep, 230);
+        ink(shape === "o" ? outline : outline.concat([outline[0]]), 2, { second: false, tip: "uwu_face", closed: shape === "o" });
+      }
     },
   };
 
@@ -674,26 +745,59 @@ const UWU = (() => {
 
   function blush(s) {
     const [cx, cy] = PIVOTS[s < 0 ? "blush_R" : "blush_L"];
-    wash(ellipse(cx, cy, 25, 21, 40), P.blush, 150);
-    wash(ellipse(cx, cy, 19, 16, 36), P.blushDeep, 150);
-    paint(ellipse(cx, cy, 22, 18, 32), P.blushDeep, 160, 0.05, 0.3, 0.05);
-    strokes([ellipse(cx, cy, 9, 7, 16, 0.3, 5.6), ellipse(cx, cy, 15, 12, 20, 0.4, 5.4)], P.blushDeep, 1.8);
+    const k = face.blush;
+    if (k <= 0.02) return;
+    const a = (v) => Math.min(255, v * k), r = 1 + 0.15 * (k - 1);
+    wash(ellipse(cx, cy, 25 * r, 21 * r, 40), P.blush, a(150));
+    wash(ellipse(cx, cy, 19 * r, 16 * r, 36), P.blushDeep, a(150));
+    paint(ellipse(cx, cy, 22 * r, 18 * r, 32), P.blushDeep, a(160), 0.05, 0.3, 0.05);
+    strokes([ellipse(cx, cy, 9 * r, 7 * r, 16, 0.3, 5.6), ellipse(cx, cy, 15 * r, 12 * r, 20, 0.4, 5.4)], P.blushDeep, 1.8);
   }
 
   function eye(s) {
     const [cx, cy] = PIVOTS[s < 0 ? "eye_R" : "eye_L"];
-    const at = ([u, v]) => [cx + s * u, cy + v];
-    const ix = cx - 11 * s, iy = cy + 4, irx = 24.5, iry = 27.5;
+    const e = face.eye;
+    const lash = (q) => [cx + s * q[0], cy + q[1]];
+    const closedShapes = {
+      arcHappy: [[30, 4, 0.9], [20, -4, 1.3], [8, -9, 1.5], [0, -10, 1.5], [-10, -9, 1.35], [-20, -4, 1.1], [-30, 4, 0.8]],
+      arcU: [[28, -8, 0.9], [18, 2, 1.3], [8, 7, 1.5], [0, 8, 1.5], [-10, 7, 1.35], [-20, 2, 1.1], [-28, -8, 0.8]],
+      closedLine: [[31, 1, 0.9], [15, 4, 1.3], [0, 5, 1.3], [-15, 4, 1.1], [-31, 1, 0.8]],
+    };
+    const shape = e.shape !== "open" ? e.shape : e.open <= 0.15 ? "closedLine" : "open";
+    if (shape !== "open") {
+      const pts = closedShapes[shape];
+      ink(pts.map(([u, v, p]) => [...lash([u, v]), p]), 2.6, { second: false, tip: "uwu_face" });
+      // the two lashes move to the outer end of the closed line, keeping their slant
+      const [ou, ov] = pts[0];
+      ink([[...lash([ou - 3, ov - 2]), 1.2], [...lash([ou - 1.5, ov - 5]), 0.85], [...lash([ou, ov - 7.5]), 0.3]], 1.5, { second: false, tip: "uwu_face" });
+      ink([[...lash([ou + 1, ov + 1]), 1.15], [...lash([ou + 3.5, ov - 1.5]), 0.8], [...lash([ou + 5.5, ov - 3.5]), 0.3]], 1.4, { second: false, tip: "uwu_face" });
+      return;
+    }
+    // eye.open squashes the outline about v = +2; the lid follows the squashed top
+    const o = e.open;
+    const at = ([u, v]) => [cx + s * u, cy + 2 + (v - 2) * o];
+    const ix = cx - 11 * s + e.gaze[0], iy = cy + 4 + e.gaze[1], irx = 24.5 * e.iris, iry = 27.5 * e.iris;
+    // iris pieces are pulled inside the opening when the eye is squashed, looks aside or the iris grows
+    const clipOn = o < 0.999 || e.gaze[0] || e.gaze[1] || e.iris > 1;
+    const ecy = cy + 2.25, erx = 35, ery = 29.25 * o;
+    const clip = (pts) => (clipOn ? pts.map(([x, y]) => {
+      const k = Math.hypot((x - cx) / erx, (y - ecy) / ery);
+      return k > 0.97 ? [cx + ((x - cx) / k) * 0.97, ecy + ((y - ecy) / k) * 0.97] : [x, y];
+    }) : pts);
+    const inside = ([x, y]) => !clipOn || Math.hypot((x - cx) / erx, (y - ecy) / ery) < 0.9;
     wash(smooth(SOCKET.map(at), true), P.sclera);
     paint(band(SOCKET.slice(2, 9).map(at), [ix, iy], 6), P.lidShade, 150, 0.05, 0.3, 0.2);
     // iris: dark under the lid, mid plum, raspberry band along the bottom
-    wash(ellipse(ix, iy, irx, iry, 36), P.iris);
-    wash(band(ellipse(ix, iy, irx, iry, 16, Math.PI * 1.08, Math.PI * 1.92), [ix, iy], 14), P.irisDark, 230);
-    wash(band(ellipse(ix, iy, irx - 0.5, iry - 0.5, 16, Math.PI * 0.12, Math.PI * 0.88), [ix, iy], 14), P.irisLight, 235);
-    paint(band(ellipse(ix, iy, irx - 1, iry - 1, 16, Math.PI * 0.2, Math.PI * 0.8), [ix, iy], 5), P.irisRim, 110, 0.05, 0.5, 0.3);
-    wash(ellipse(ix - 2 * s, iy + 4, 10, 11, 24), P.pupil, 150);
-    wash(ellipse(ix - 2 * s, iy - 8.5, 2.8, 2.8, 14), P.shine);
-    wash(ellipse(ix + 12 * s, iy + 17, 1.3, 1.3, 10), P.irisDot, 150);
+    wash(clip(ellipse(ix, iy, irx, iry, 36)), P.iris);
+    wash(clip(band(ellipse(ix, iy, irx, iry, 16, Math.PI * 1.08, Math.PI * 1.92), [ix, iy], 14 * e.iris)), P.irisDark, 230);
+    wash(clip(band(ellipse(ix, iy, irx - 0.5, iry - 0.5, 16, Math.PI * 0.12, Math.PI * 0.88), [ix, iy], 14 * e.iris)), P.irisLight, 235);
+    paint(clip(band(ellipse(ix, iy, irx - 1, iry - 1, 16, Math.PI * 0.2, Math.PI * 0.8), [ix, iy], 5)), P.irisRim, 110, 0.05, 0.5, 0.3);
+    wash(clip(ellipse(ix - 2 * s, iy + 4 * e.iris, 10 * e.iris, 11 * e.iris, 24)), P.pupil, 150);
+    const dot = (x, y, r, c, a = 255) => { if (inside([x, y])) wash(ellipse(x, y, r, r, 14), c, a); };
+    dot(ix - 2 * s, iy - 8.5 * e.iris, 2.8, P.shine);
+    dot(ix + 12 * s * e.iris, iy + 17 * e.iris, 1.3, P.irisDot, 150);
+    if (e.shine >= 1) dot(ix + 8 * s, iy + 10, 1.7, P.shine, 230);
+    if (e.shine >= 2) dot(ix - 4 * s, iy + 14, 3, P.shine, 220);
     // heavy upper lid, thickest over the outer top
     ink(SOCKET.slice(0, 12).map((q, i) => [...at(q), LID_PRESSURE[i]]), 2.9, { second: false, tip: "uwu_face" });
     // dark line along the inner side and under the iris, faint warm line under the white
@@ -704,12 +808,17 @@ const UWU = (() => {
     // two short lashes on the upper-outer lid, and the faint fold above it
     ink([[...at([22, -25]), 1.25], [...at([23.5, -28]), 0.9], [...at([25, -30.5]), 0.35]], 1.5, { second: false, tip: "uwu_face" });
     ink([[...at([29, -18]), 1.2], [...at([30.5, -20.5]), 0.85], [...at([32, -22.5]), 0.3]], 1.4, { second: false, tip: "uwu_face" });
-    ink([at([5, -34]), at([-5, -34]), at([-15, -32]), at([-24, -28.5])], 0.9, { second: false, tip: "uwu_face", color: P.fold });
+    if (o > 0.6) ink([at([5, -34]), at([-5, -34]), at([-15, -32]), at([-24, -28.5])], 0.9, { second: false, tip: "uwu_face", color: P.fold });
   }
 
   function brow(s) {
     const [cx, cy] = PIVOTS[s < 0 ? "brow_R" : "brow_L"];
-    ink(BROW.map(([u, v, p]) => [cx + s * u, cy + v, p]), 2.3, { second: false, tip: "uwu_face" });
+    // tilt > 0 lifts the inner end: counter-clockwise for brow_R, clockwise for brow_L
+    const a = deg(face.brow.tilt) * s, c = Math.cos(a), sn = Math.sin(a);
+    ink(BROW.map(([u, v, p]) => {
+      const x = s * u, y = v;
+      return [cx + x * c - y * sn, cy + face.brow.dy + x * sn + y * c, p];
+    }), 2.3, { second: false, tip: "uwu_face" });
   }
 
   // ---------------------------------------------------------------------------
@@ -737,8 +846,9 @@ const UWU = (() => {
 
   // Draw UwU with the ground point at (x, y); s = canvas pixels per rig unit.
   // Every part gets its own seed, so a change in one part never re-rolls another's texture.
-  function draw(x = 0, y = 0, s = 1, { pose = NEUTRAL, seed = 19 } = {}) {
+  function draw(x = 0, y = 0, s = 1, { pose = NEUTRAL, face: f = {}, seed = 19 } = {}) {
     ensureBrushes();
+    face = fullFace(f);
     const mode = angleMode();
     angleMode(RADIANS);
     push();
@@ -765,5 +875,5 @@ const UWU = (() => {
     }
   }
 
-  return { PALETTE, PIVOTS, PARENT, DRAW_ORDER, NEUTRAL, draw };
+  return { PALETTE, PIVOTS, PARENT, DRAW_ORDER, NEUTRAL, FACE, EXPRESSIONS, fullFace, draw };
 })();
