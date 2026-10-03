@@ -20,16 +20,20 @@
       pixelDensity(1);
       frameRate(UWU_ANIM.FPS);
       if (still) noLoop();
-      window.renderFrame = (n) => {
-        background("#f9f1e6");
-        const { pose, face, seed } = UWU_ANIM.state(n / UWU_ANIM.FPS);
-        UWU.draw(0, 450, 1.8, { pose, face, seed });
+      // Frames are drawn inside draw() so p5.brush flushes its last strokes at the end of each frame.
+      window.renderFrame = async (n) => {
+        target = n;
+        await redraw();
       };
       window.UWU_FRAMES = Math.round(UWU_ANIM.DURATION * UWU_ANIM.FPS);
       window.UWU_READY = true;
     }
+    let target = 0;
     function draw() {
-      if (!still) window.renderFrame(frameCount % window.UWU_FRAMES);
+      const n = still ? target : frameCount % window.UWU_FRAMES;
+      background("#f9f1e6");
+      const { pose, face, seed } = UWU_ANIM.state(n / UWU_ANIM.FPS);
+      UWU.draw(0, 450, 1.8, { pose, face, seed });
     }
   </script>
 </body>
