@@ -15,7 +15,7 @@ const UWU_LOOPS = (() => {
   const TAU = Math.PI * 2;
   const S = 0.88; // mascot scale on the 720 canvas
   const G = 300; // ground line (canvas y, WEBGL origin at the centre)
-  const ICON = [30, -588]; // icon chip centre in rig units, above the curl
+  const ICON = [30, -600]; // icon chip centre in rig units, above the curl
   const deg = (d) => (d * Math.PI) / 180;
   const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
   const lerp = (a, b, k) => a + (b - a) * k;
@@ -135,13 +135,34 @@ const UWU_LOOPS = (() => {
     return f;
   }
 
-  // canvas point of a rig point that moves with root and head
+  // one rig transform, as in uwu.js: translate(pivot + d) · rotate · scale · translate(-pivot)
+  function xf(pt, t, piv) {
+    if (!t) return pt;
+    const a = t.rot || 0, c = Math.cos(a), s = Math.sin(a);
+    const x = (pt[0] - piv[0]) * (t.sx ?? 1), y = (pt[1] - piv[1]) * (t.sy ?? 1);
+    return [piv[0] + (t.dx || 0) + x * c - y * s, piv[1] + (t.dy || 0) + x * s + y * c];
+  }
+  // canvas point of a rig point that moves with the head (head → body → root)
   function headPt(u, v, pose) {
-    const r = pose.root || {}, h = pose.head || {};
-    const a = h.rot || 0, c = Math.cos(a), s = Math.sin(a);
-    const dv = v + 150;
-    const hu = u * c - dv * s + (h.dx || 0), hv = u * s + dv * c - 150 + (h.dy || 0);
-    return [S * (hu + (r.dx || 0)), G + S * (hv + (r.dy || 0))];
+    let q = xf([u, v], pose.head, [0, -150]);
+    q = xf(q, pose.body, [0, -15]);
+    q = xf(q, pose.root, [0, 0]);
+    return [S * q[0], G + S * q[1]];
+  }
+
+  // blend two full faces: numbers interpolate, shapes switch at k = 0.5
+  function faceLerp(fa, fb, k) {
+    const mixObj = (oa, ob) => {
+      const out = {};
+      for (const key of new Set([...Object.keys(oa), ...Object.keys(ob)])) {
+        const va = oa[key] ?? ob[key], vb = ob[key] ?? oa[key];
+        if (typeof va === "number" && typeof vb === "number") out[key] = lerp(va, vb, k);
+        else if (Array.isArray(va) && Array.isArray(vb)) out[key] = va.map((x, i) => lerp(x, vb[i], k));
+        else out[key] = k < 0.5 ? va : vb;
+      }
+      return out;
+    };
+    return { eye: mixObj(fa.eye, fb.eye), brow: mixObj(fa.brow, fb.brow), mouth: mixObj(fa.mouth, fb.mouth), blush: lerp(fa.blush, fb.blush, k), star: lerp(fa.star, fb.star, k) };
   }
 
   // ---------------------------------------------------------------------------
@@ -153,6 +174,7 @@ const UWU_LOOPS = (() => {
     mint: "#7fc9a0", red: "#e9707b", gold: "#f0b75e", sky: "#86b3e6", violet: "#a78bdb",
     pink: "#ee95b2", plum: "#a46a9a", white: "#fffaf2", ink: "#52263b", steel: "#9d8ca0",
     smoke: "#a99aa6", orange: "#f08a4b", glitchA: "#7fd6e8", glitchB: "#ef7fb8",
+    magenta: "#d14f8a", coin: "#eaa53f", linked: "#82bec3", rays: "#e9a23b", gearDeep: "#7a6680",
   };
 
   function strokePoly(pts, w, closed = false) {
@@ -170,7 +192,8 @@ const UWU_LOOPS = (() => {
       Rp.push([pts[i][0] - mx * m, pts[i][1] - my * m]);
       tan.push(t2);
     }
-    if (closed) return [...Lp, Lp[0], Rp[0], ...Rp.slice(1).reverse()];
+    // outer loop, a zero-width slit, the inner loop back to its start
+    if (closed) return [...Lp, Lp[0], Rp[0], ...Rp.slice(1).reverse(), Rp[0]];
     const cap = (p, t, sgn) => {
       const nn = [-t[1], t[0]], out = [];
       for (let k = 1; k < 6; k++) {
@@ -212,11 +235,11 @@ const UWU_LOOPS = (() => {
   // ---------------------------------------------------------------------------
 
   const R = 44;
-  function chipBase(color, r = R) {
+  function chipBase(color, r = R, shine = true) {
     const k = K();
     k.wash(circle(0, 0, r + 1.5), COL.white, 255); // keeps the chip opaque over effects
     k.wash(circle(0, 0, r), color);
-    k.wash(k.ellipse(-r * 0.22, -r * 0.34, r * 0.5, r * 0.3, 20), "#ffffff", 70);
+    if (shine) k.wash(k.ellipse(-r * 0.22, -r * 0.34, r * 0.5, r * 0.3, 20), "#ffffff", 70);
     outlineRing(circle(0, 0, r), 3.2);
   }
 
@@ -224,12 +247,12 @@ const UWU_LOOPS = (() => {
     check() { thick([[-17, 2], [-5, 14], [18, -12]], 9); },
     cross() { thick([[-13, -13], [13, 13]], 9); thick([[13, -13], [-13, 13]], 9); },
     warn() { thick([[0, -19], [0, 5]], 9, COL.ink); dot(0, 17, 5.2, COL.ink); },
-    coin() { PROPS.label("$", 0, 1, 42, COL.white, COL.gold); },
-    percent() { PROPS.label("%", 0, 1, 40, COL.white, COL.pink); },
-    q404() { PROPS.label("404", 0, 1, 27, COL.white, COL.violet); },
+    coin(o) { PROPS.label("$", 0, 1, 46, COL.white, o.color ?? COL.gold); },
+    percent(o) { PROPS.label("%", 0, 1, 46, COL.white, o.color ?? COL.pink); },
+    q404() { PROPS.label("404", 0, 2, 36, COL.white, COL.violet); },
     sparkle(o) {
-      PROPS.at(0, 0, o.rot ?? 0, o.k ?? 1, () => K().wash(star4(24, 0.28), COL.white));
-      PROPS.at(16, -16, 0, (o.k2 ?? 1) * 0.32, () => K().wash(star4(24, 0.3), COL.white));
+      PROPS.at(-3, 3, o.rot ?? 0, o.k ?? 1, () => K().wash(star4(25, 0.38), COL.white));
+      PROPS.at(21, -21, 0, (o.k2 ?? 1) * 0.4, () => K().wash(star4(25, 0.38), COL.white));
     },
     heart() {
       const pts = [];
@@ -242,33 +265,40 @@ const UWU_LOOPS = (() => {
       dot(0, 3, 3.6, COL.violet);
     },
     lock(o) {
-      const open = o.open ?? 0, lift = 9 * open, hole = o.hole ?? COL.violet;
-      thick([[-11, 2], [-11, -9 - lift], ...arcPts(0, -9 - lift, 11, Math.PI, TAU, 12).slice(1), [11, -9 - lift + 9 * (1 - open)]], 6.5);
+      const open = o.open ?? 0, lift = 9 * open, hole = o.hole ?? COL.violet, leg = 9 * Math.max(0, 1 - open);
+      const shackle = [[-11, 2], [-11, -9 - lift], ...arcPts(0, -9 - lift, 11, Math.PI, TAU, 12).slice(1)];
+      thick(leg > 0.5 ? [...shackle, [11, -9 - lift + leg]] : shackle, 6.5);
       K().wash(PROPS.rrect(36, 26, 6).map(([x, y]) => [x, y + 9]), COL.white);
       dot(0, 7, 3.6, hole);
       thick([[0, 8], [0, 14]], 3.2, hole);
     },
     mail(o) {
-      const flap = o.flap ?? 0;
+      const flap = o.flap ?? 0, ink = o.ink ?? COL.pink;
+      if (flap > 0.02) K().wash([[-22, -13], [0, -13 - 15 * flap], [22, -13]], COL.white);
       K().wash(PROPS.rrect(44, 32, 5).map(([x, y]) => [x, y + 2]), COL.white);
-      thick([[-18, -11], [0, 3 - 18 * flap], [18, -11]], 3.4, COL.pink);
+      thick([[-17, 15], [0, 4], [17, 15]], 3, ink);
+      if (flap > 0.02) thick([[-19, -13], [0, -13 - 15 * flap], [19, -13]], 3.4, ink);
+      else thick([[-18, -11], [0, 3], [18, -11]], 3.4, ink);
     },
     link(o) {
+      // two interlocking links; the second one gets an under-stroke in the chip colour
       const gap = o.gap ?? 0, c = Math.cos(-0.7), sn = Math.sin(-0.7);
       for (const s of [-1, 1]) {
-        const ox = s * (7.5 + gap * 0.75), oy = s * (-6.5 - gap * 0.65);
-        const pts = PROPS.rrect(26, 15, 7.5, 3).map(([x, y]) => [x * c - y * sn + ox, x * sn + y * c + oy]);
+        const ox = s * (9 + gap * 0.75), oy = s * (-7.5 - gap * 0.65);
+        const pts = PROPS.rrect(26, 15, 7.5, 6).map(([x, y]) => [x * c - y * sn + ox, x * sn + y * c + oy]);
+        if (s > 0 && o.bg) K().wash(strokePoly(pts, 12, true), o.bg);
         K().wash(strokePoly(pts, 6, true), COL.white);
       }
     },
     gear(o) {
-      const r = 20, teeth = 8, pts = [];
+      // 6 teeth: reads as a cog down to 80 px
+      const r = 25, teeth = 6, pts = [];
       for (let i = 0; i < teeth * 4; i++) {
         const a = (i / (teeth * 4)) * TAU + (o.rot ?? 0), out = i % 4 === 1 || i % 4 === 2;
-        pts.push([(out ? r : r * 0.72) * Math.cos(a), (out ? r : r * 0.72) * Math.sin(a)]);
+        pts.push([(out ? r : r * 0.66) * Math.cos(a), (out ? r : r * 0.66) * Math.sin(a)]);
       }
       K().wash(pts, o.color ?? COL.white);
-      dot(0, 0, 6.5, o.hole ?? COL.sky);
+      dot(0, 0, 7.5, o.hole ?? COL.sky);
     },
     dots(o) {
       for (let i = 0; i < 3; i++) {
@@ -301,7 +331,8 @@ const UWU_LOOPS = (() => {
     },
     chart(o) {
       const h = o.h || [0.5, 0.75, 1];
-      h.forEach((v, i) => { const hh = 5 + 25 * v; K().wash(PROPS.rrect(10, hh, 2.5, 2).map(([x, y]) => [x - 13 + i * 13, y + 16 - hh / 2]), COL.white); });
+      h.forEach((v, i) => { const hh = 5 + 25 * v; K().wash(PROPS.rrect(10, hh, 2.5, 2).map(([x, y]) => [x - 13 + i * 13, y + 15 - hh / 2]), COL.white); });
+      thick([[-21, 19.5], [21, 19.5]], 3);
     },
     factory() {
       K().wash([[-21, 15], [-21, -1], [-11, -9], [-11, -1], [-1, -9], [-1, -1], [21, -1], [21, 15]], COL.white);
@@ -312,7 +343,7 @@ const UWU_LOOPS = (() => {
 
   // chip(kind) draws a round chip with a glyph; pill(name) draws a brand pill.
   function chip(kind, color, o = {}) {
-    chipBase(color);
+    chipBase(color, R, o.shine ?? kind !== "q404");
     if (GLYPH[kind]) GLYPH[kind](o);
   }
   function badgeDot(x, y, sc) {
@@ -330,6 +361,14 @@ const UWU_LOOPS = (() => {
     if (b > 0.02) PROPS.at(w / 2 - 6, -26, 0, 0.56 * b, () => { chipBase(COL.red); GLYPH.cross(); });
   }
 
+  // small heart particle: flat colour plus a highlight, no ink outline (no specks when tiny)
+  function heartFx(r = 14, color = COL.pink) {
+    const pts = [];
+    for (let i = 0; i < 36; i++) { const a = (i / 36) * TAU; pts.push([r * 0.06 * 16 * Math.pow(Math.sin(a), 3), -r * 0.06 * (13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a))]); }
+    K().wash(pts, color);
+    K().wash(K().ellipse(-r * 0.4, -r * 0.35, r * 0.22, r * 0.16, 12), "#ffffff", 170);
+  }
+
   // ---------------------------------------------------------------------------
   // Effects (canvas coordinates)
   // ---------------------------------------------------------------------------
@@ -343,9 +382,10 @@ const UWU_LOOPS = (() => {
     ripple(L, x, y, at, len, r0, r1, color, w = 6) {
       const u = L.local(at, len);
       if (u < 0) return;
-      const r = lerp(r0, r1, E.outCubic(u)), a = 1 - E.inCubic(u);
+      // fades by thinning, never by alpha: low-alpha washes turn grey in p5.brush
+      const r = lerp(r0, r1, E.outCubic(u)), ww = w * (1 - E.inCubic(u));
       reseed(90);
-      if (a > 0.03) ring(x, y, r, w * (0.4 + 0.6 * (1 - u)), color, 255 * a);
+      if (ww > 1.2) ring(x, y, r, ww, color, 255);
     },
     // radial dashes popping out of (x, y)
     burst(L, x, y, at, len, r0, r1, color, n = 8, w = 5, rot = 0.2) {
@@ -361,7 +401,7 @@ const UWU_LOOPS = (() => {
     // fixed-position sparkles that each twinkle once per loop, staggered
     twinkle(L, spots, color = COL.gold, size = 16, k = 1, grow = 1.3) {
       spots.forEach(([x, y], i) => {
-        const u = L.fr(k, i / spots.length), sc = u < 0.6 ? E.hump(u / 0.6) : 0;
+        const u = L.fr(k, i / spots.length), sc = u < 0.6 ? Math.sin((Math.PI * u) / 0.6) : 0;
         if (sc > 0.04) { reseed(i); PROPS.at(x, y, 0.6 * u, sc * grow, () => K().wash(star4(size, 0.3), color)); }
       });
     },
@@ -375,21 +415,23 @@ const UWU_LOOPS = (() => {
       }
     },
     // particles falling and spinning; each makes one trip per loop
-    fall(L, n, x0, y0, spread, height, draw) {
+    // lanes(i) → x keeps pieces off the face and chip
+    fall(L, n, x0, y0, spread, height, draw, lanes = null) {
       for (let i = 0; i < n; i++) {
         const u = L.fr(1, i / n + hash(i) * 0.37);
-        const x = x0 + (hash(i + 4) - 0.5) * spread + 16 * Math.sin(TAU * (2 * u + hash(i)));
+        const x = (lanes ? lanes(i) : x0 + (hash(i + 4) - 0.5) * spread) + 12 * Math.sin(TAU * (2 * u + hash(i)));
         const sc = Math.min(1, 4 * Math.sin(Math.PI * u));
         if (sc > 0.04) { reseed(i); PROPS.at(x, y0 + height * u, TAU * u * (hash(i + 6) > 0.5 ? 1 : -1), sc, () => draw(i)); }
       }
     },
     // confetti thrown out of (x, y) at `at`, with gravity; gone before the window ends
-    pop(L, x, y, at, len, n, speed, draw) {
+    // r0: spawn radius, so pieces start outside the chip
+    pop(L, x, y, at, len, n, speed, draw, r0 = 0) {
       const u = L.local(at, len);
       if (u < 0) return;
       for (let i = 0; i < n; i++) {
         const a = -Math.PI / 2 + (i / (n - 1) - 0.5) * 2.6 + 0.2 * (hash(i) - 0.5), v = speed * (0.75 + 0.5 * hash(i + 3));
-        const px = x + Math.cos(a) * v * u, py = y + Math.sin(a) * v * u + 520 * u * u;
+        const px = x + Math.cos(a) * (r0 + v * u), py = y + Math.sin(a) * (r0 + v * u) + 520 * u * u;
         const sc = Math.min(1, 6 * u) * (1 - E.inCubic(u));
         if (sc > 0.04) { reseed(i); PROPS.at(px, py, TAU * u * (i % 2 ? 1.5 : -1.5), sc, () => draw(i)); }
       }
@@ -398,7 +440,8 @@ const UWU_LOOPS = (() => {
     sweat(L, pose, at = 0.15, len = 0.8, side = -1) {
       const u = L.local(at, len);
       if (u < 0) return;
-      const [x, y] = headPt(side * 152, -330 + 52 * E.inCubic(u), pose);
+      // follows the head outline, about 8 units outside it
+      const [x, y] = headPt(side * (98 + 44 * E.inCubic(u)), -310 + 48 * E.inCubic(u), pose);
       const sc = Math.min(1, u * 6) * (1 - E.inCubic(clamp((u - 0.8) / 0.2)));
       if (sc > 0.04) { reseed(3); PROPS.at(x, y, 0, sc * 1.25, () => PROPS.sweat(9)); }
     },
@@ -406,26 +449,27 @@ const UWU_LOOPS = (() => {
     shock(L, pose, at, len, color = COL.plum) {
       const u = L.local(at, len);
       if (u < 0) return;
-      const e = E.outCubic(u), a = 1 - E.inCubic(u);
+      const e = E.outCubic(u);
       reseed(92);
       for (const sd of [-1, 1]) for (let i = 0; i < 3; i++) {
         const ang = (sd < 0 ? Math.PI : 0) + sd * (i - 1) * 0.42, [cx, cy] = headPt(sd * 120, -330, pose);
-        const r0 = 80 + 20 * e, r1 = r0 + 26 * (1 - u * 0.5);
-        thick([[cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0], [cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1]], 5.5, color, 255 * a);
+        const r0 = 80 + 20 * e, r1 = r0 + 26 * (1 - E.inCubic(u)); // retracts instead of fading
+        if (r1 - r0 > 2) thick([[cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0], [cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1]], 5.5 * (1 - 0.5 * u), color);
       }
     },
     // a spinner arc around the chip: whole turns per loop, length breathing once per loop
-    spinner(L, x, y, r, color, turns = 1) {
+    spinner(L, x, y, r, color, turns = 1, w = 10) {
       const head = TAU * (turns * L.p) - Math.PI / 2, len = 0.9 + 1.6 * (0.5 - 0.5 * L.c(1));
       reseed(93);
-      arc(x, y, r, 7, head - len, head, color);
+      arc(x, y, r, w, head - len, head, color);
     },
     // sound arcs on both sides of a point, k waves per loop
-    sound(L, x, y, k, color, gap = 52) {
+    // inward = true: the waves travel towards the point (listening)
+    sound(L, x, y, k, color, gap = 52, inward = false) {
       reseed(94);
       for (const sd of [-1, 1]) for (let i = 0; i < 2; i++) {
-        const u = L.fr(k, i * 0.5), r = gap + 34 * u, a = Math.sin(Math.PI * u);
-        if (a > 0.05) arc(x, y, r, 5.5 * a + 1, (sd < 0 ? Math.PI : 0) - 0.5, (sd < 0 ? Math.PI : 0) + 0.5, color, 255 * a);
+        const u = L.fr(k, i * 0.5), r = gap + 34 * (inward ? 1 - u : u), a = Math.sin(Math.PI * u);
+        if (a > 0.2) arc(x, y, r, 6.5 * a, (sd < 0 ? Math.PI : 0) - 0.5, (sd < 0 ? Math.PI : 0) + 0.5, color);
       }
     },
     // short horizontal bars beside the chip (glitch)
@@ -444,68 +488,66 @@ const UWU_LOOPS = (() => {
   // ---------------------------------------------------------------------------
   //
   // def(id, title, group, T, { motion(L) → pose, look(L, pose, I) → { face, icon, back, front } })
-  //   I = [x, y] is the chip centre on the canvas. It follows the head 0.06 s late, so the
+  //   I = [x, y] is the chip centre on the canvas. It follows the head 0.04 s late, so the
   //   chip trails the character's moves.
 
   const LOOPS = {};
   const def = (id, title, group, T, spec) => (LOOPS[id] = { id, title, group, T, ...spec });
-  const LAG = 0.06;
+  const LAG = 0.04;
   // icon = [dx, dy, scale, rot, drawFn, sx] relative to I
   const icon = (draw, { dx = 0, dy = 0, sc = 1, rot = 0, sx = 1 } = {}) => [dx, dy, sc, rot, draw, sx];
 
   // ---- everyday flow ----
 
-  // T 2: waving hello (2.5 Hz), heart chip beating lub-dub twice per loop
+  // T 2: waving hello (2 Hz, −14° … −50°), heart chip beating lub-dub twice per loop
   def("welcome", "مرحبًا", "flow", 2, {
     motion: (L) => add(life(L), {
-      arm_L: { rot: -deg(25) - deg(10) * L.s(5) },
-      head: { rot: deg(4) * L.s(1) + deg(1.5) * L.s(5, 0.15) },
-      root: { dx: 4 * L.s(1) },
-      body: { sy: 1 + 0.01 * L.s(5, 0.3) },
+      arm_L: { rot: -deg(32) - deg(18) * L.s(4) },
+      head: { rot: deg(5) + deg(2) * L.s(1) + deg(1.5) * L.s(4, 0.15) },
+      body: { sy: 1 + 0.01 * L.s(4, 0.3) },
+      tuft_L: { rot: 0.06 * L.s(4, 0.2) },
     }),
     look(L, pose, I) {
       const beat = 0.16 * (L.env(0, 0.09) + L.env(0.5, 0.09)) + 0.1 * (L.env(0.11, 0.09) + L.env(0.61, 0.09));
       return {
-        face: blink(face("happy", { eye: { shape: "open", shine: 1 }, mouth: { shape: "openSmile", open: 0.3, width: 1 } }), L, 0.8),
+        face: blink(face("happy", { eye: { shape: "open", shine: 1 }, mouth: { shape: "openSmile", open: 0.35, width: 1 } }), L, 0.8),
         icon: icon(() => chip("heart", COL.pink), { sc: 1 + beat, rot: deg(5) * L.s(1, 0.25) }),
         front() {
-          FX.rise(L, 3, 1, I[0], I[1] + 10, 230, 95, () => PROPS.heart(13, COL.pink));
-          FX.twinkle(L, [[-200, -170], [205, -80], [-170, 60]], COL.gold, 15);
+          FX.rise(L, 2, 1, I[0], I[1] + 10, 230, 95, () => heartFx(15));
+          FX.twinkle(L, [[-200, -170], [205, -80], [-170, 60]], COL.gold, 16);
         },
       };
     },
   });
 
-  // T 1.5: focused typing rhythm (4 Hz); the gear ticks one tooth per beat; spinner around it
+  // T 1.5: focused squint, typing rhythm (4 Hz); the cog ticks one tooth (60°) per beat
   def("working", "جاري العمل", "flow", 1.5, {
     motion(L) {
       const tap = L.s(6);
       return add(life(L, 1, 0.6), {
-        arm_R: { rot: deg(5) + deg(9) * Math.max(0, tap) }, arm_L: { rot: -deg(5) - deg(9) * Math.max(0, -tap) },
-        head: { rot: deg(1.5) * L.s(3), dy: 3 + 2 * Math.abs(L.s(3)) },
-        root: { dy: -2 * Math.abs(L.s(3, 0.05)) },
-        curl: { rot: 0.04 * L.s(3, 0.12) },
+        arm_R: { rot: deg(8) + deg(16) * Math.max(0, tap) }, arm_L: { rot: -deg(8) - deg(16) * Math.max(0, -tap) },
+        head: { rot: deg(1.5) * L.s(3), dy: 3 + 4 * Math.abs(L.s(3)) },
+        curl: { rot: 0.06 * L.s(3, 0.12) },
       });
     },
     look(L, pose, I) {
-      // three ticks per loop, each turns the gear one tooth (45°) with an overshoot
       const n = Math.floor(L.p * 3), x = L.p * 3 - n, tick = n + E.outBack(clamp(x / 0.35), 2.4);
       return {
-        face: blink(face("neutral", { eye: { open: 0.86, gaze: [0, 6] }, brow: { dy: 3, tilt: -5 }, mouth: { shape: "wavy", width: 0.5 } }), L, 0.55),
-        icon: icon(() => chip("gear", COL.sky, { rot: (tick * TAU) / 8 })),
-        back() { FX.spinner(L, I[0], I[1], 62, COL.sky, 1); },
+        face: blink(face("neutral", { eye: { open: 0.72, gaze: [0, 7] }, brow: { dy: 6, tilt: -12 }, mouth: { shape: "wavy", width: 0.6 } }), L, 0.55),
+        icon: icon(() => chip("gear", COL.sky, { rot: (tick * TAU) / 6 })),
+        back() { FX.spinner(L, I[0], I[1], 62, COL.sky, 1, 10); },
       };
     },
   });
 
   // T 1.5: one jump with arms up; on the apex the check chip pops, a ring and rays fly out
   def("success", "تم بنجاح", "flow", 1.5, {
-    motion: (L) => add(life(L), jump(L, 0.04, 0.62, 40, { arms: 30 })),
+    motion: (L) => add(life(L), jump(L, 0.04, 0.62, 40, { arms: 48 })),
     look(L, pose, I) {
       return {
         face: face("happy"),
         icon: icon(() => chip("check", COL.mint), { sc: 1 + 0.2 * L.env(0.28, 0.3, (x) => E.wob(x, 1.2, 1.6)) }),
-        back() { FX.ripple(L, I[0], I[1], 0.3, 0.5, 46, 120, COL.mint, 7); },
+        back() { FX.ripple(L, I[0], I[1], 0.3, 0.42, 46, 120, COL.mint, 8); },
         front() {
           FX.burst(L, I[0], I[1], 0.3, 0.32, 56, 104, COL.gold, 8, 6);
           FX.twinkle(L, [[-190, -150], [200, -60], [-160, 70], [190, 120]], COL.gold, 15);
@@ -514,72 +556,73 @@ const UWU_LOOPS = (() => {
     },
   });
 
-  // T 2: coin toss above the head (one full flip); UwU watches it and cheers on the catch
+  // T 2: coin toss above the head (one full flip); UwU's eyes follow it, then a cheer on the catch
   def("payment_done", "تم الدفع", "flow", 2, {
     motion: (L) => add(life(L), {
       head: { rot: -deg(4) * L.env(0.05, 0.4), dy: -4 * L.env(0.05, 0.4) },
       curl: { rot: 0.1 * L.env(0.05, 0.4) },
-    }, jump(L, 0.38, 0.45, 26, { arms: 26 })),
+    }, jump(L, 0.38, 0.45, 26, { arms: 30 })),
     look(L, pose, I) {
       const toss = L.local(0.06, 0.38), air = toss < 0 ? 0 : 4 * toss * (1 - toss);
       const flip = toss < 0 ? 0 : TAU * E.sine(toss);
-      const watching = toss >= 0 && toss < 0.9;
+      // eyes open over ~4 frames as the coin leaves and close just before the cheer
+      const open = toss < 0 || toss >= 0.9 ? 0 : 1.12 * E.outBack(clamp(toss / 0.08), 2) * (1 - E.sine(clamp((toss - 0.82) / 0.08)));
       return {
-        face: watching
-          ? face("neutral", { eye: { open: 1.12, gaze: [1, -8], shine: 1 }, brow: { dy: -6 }, mouth: { shape: "o", open: 0.45 } })
+        face: toss >= 0 && toss < 0.9
+          ? face("neutral", { eye: { open, gaze: [1, -8], shine: 1 }, brow: { dy: -6 }, mouth: { shape: "o", open: 0.45 } })
           : face("happy", { blush: 1.5 }),
-        icon: icon(() => chip("coin", COL.gold), { dy: -70 * air, sx: Math.cos(flip) }),
-        back() { FX.ripple(L, I[0], I[1], 0.43, 0.45, 46, 125, COL.gold, 7); },
-        front() {
-          FX.pop(L, I[0], I[1], 0.44, 0.5, 6, 260, (i) => (i % 2 ? PROPS.coin(12) : K().wash(star4(14), COL.mint)));
-          FX.twinkle(L, [[-195, -130], [205, -40], [-175, 80]], COL.gold, 15);
+        icon: icon(() => chip("coin", COL.coin, { color: COL.coin }), { dy: -55 * air, sx: Math.cos(flip) }),
+        back() {
+          FX.ripple(L, I[0], I[1], 0.43, 0.4, 46, 105, COL.gold, 8);
+          FX.pop(L, I[0], I[1], 0.44, 0.5, 6, 240, (i) => (i % 2 ? PROPS.coin(12) : K().wash(star4(15, 0.35), COL.mint)), 50);
         },
+        front() { FX.twinkle(L, [[-195, -130], [205, -40], [-175, 80]], COL.gold, 15); },
       };
     },
   });
 
-  // T 2: proud chest-out with a happy "uwu"; the crown chip glints, gold rays
+  // T 2: a quick dip, then a proud puff (outBack) with arms out and chin up; the crown glints
   def("subscription", "الاشتراك المميز", "flow", 2, {
     motion: (L) => {
-      const proud = L.env(0.08, 0.6);
+      const puff = (LL) => LL.env(0.1, 0.6, (x) => E.hold(x, 0.18, 0.3, (u) => E.outBack(u, 2)));
+      const dip = L.env(0.03, 0.1), proud = puff(L), late = puff(L.lag(0.07));
       return add(life(L), {
-        body: { sy: 1 + 0.03 * proud }, ruff: { sy: 1 + 0.06 * proud },
-        head: { rot: deg(4) * L.s(1) - deg(3) * proud, dy: -5 * proud },
-        root: { dy: -4 * proud }, arm_R: { rot: deg(8) * proud }, arm_L: { rot: -deg(8) * proud },
-        crown: { rot: 0.08 * proud },
+        body: sq(1 - 0.06 * dip + 0.07 * proud), ruff: { sy: 1 + 0.12 * proud },
+        head: { rot: deg(3) * L.s(1) - deg(5) * proud, dy: -6 * proud },
+        arm_R: { rot: deg(26) * proud }, arm_L: { rot: -deg(26) * proud },
+        curl: { rot: 0.2 * late }, tuft_L: { rot: -0.2 * late }, crown: { rot: 0.1 * late },
       });
     },
     look(L, pose, I) {
       const glint = L.env(0.2, 0.22);
       return {
-        face: face("uwu", { blush: 1.5 }),
+        face: face("uwu", { eye: { shape: "arcHappy" }, blush: 1.5 }),
         icon: icon(() => {
           chip("crown", COL.violet);
           if (glint > 0.03) PROPS.at(24, -22, glint * 1.2, glint, () => K().wash(star4(18, 0.25), COL.white));
         }, { rot: deg(6) * L.s(1, 0.1), sc: 1 + 0.12 * L.env(0.16, 0.3, (x) => E.wob(x, 1.2, 1.6)) }),
-        front() {
-          FX.burst(L, I[0], I[1], 0.18, 0.34, 58, 100, COL.gold, 10, 5);
-          FX.twinkle(L, [[-195, -170], [210, -90], [-185, 40], [180, 110]], COL.gold, 16);
-        },
+        back() { FX.burst(L, I[0], I[1], 0.18, 0.34, 58, 92, COL.rays, 10, 6.5); },
+        front() { FX.twinkle(L, [[-195, -170], [210, -90], [-185, 40], [180, 110]], COL.gold, 16); },
       };
     },
   });
 
-  // T 1.5: two excited bounces; the % tag swings like a hanging tag; confetti falls
+  // T 1.5: two excited bounces; the % tag swings; confetti falls in side lanes, clear of the face
   def("offers", "العروض", "flow", 1.5, {
-    motion: (L) => add(life(L), jump(L, 0, 0.5, 18, { arms: 18 }), jump(L, 0.5, 0.5, 18, { arms: 18 })),
+    motion: (L) => add(life(L), jump(L, 0, 0.5, 28, { arms: 28 }), jump(L, 0.5, 0.5, 28, { arms: 28 })),
     look(L, pose, I) {
       return {
         face: face("happy", { eye: { shape: "open", open: 1.1, shine: 1 }, mouth: { shape: "openSmile", open: 0.5 } }),
-        icon: icon(() => chip("percent", COL.pink), { rot: deg(16) * L.s(2, 0.08) }),
+        icon: icon(() => chip("percent", COL.magenta, { color: COL.magenta }), { rot: deg(16) * L.s(2, 0.05) }),
         front() {
-          FX.fall(L, 9, 0, -360, 620, 620, (i) => PROPS.confettiPiece(17, 9, [COL.pink, COL.gold, COL.mint, COL.violet, COL.sky][i % 5]));
+          FX.fall(L, 8, 0, -360, 0, 620, (i) => PROPS.confettiPiece(17, 9, [COL.pink, COL.gold, COL.mint, COL.violet, COL.sky][i % 5]),
+            (i) => (i % 2 ? 1 : -1) * (250 + 55 * hash(i + 4)));
         },
       };
     },
   });
 
-  // T 2: the lock shakes, springs open with a click (chip turns mint), stays open, closes again
+  // T 2: the lock rattles harder and harder, springs open with a click (mint), UwU hops; closes again
   const loginOpen = (L) => {
     const x = L.local(0.3, 0.6);
     return x < 0 ? 0 : x < 0.12 ? E.outBack(x / 0.12, 2.2) : x > 0.82 ? 1 - E.sine((x - 0.82) / 0.18) : 1;
@@ -588,119 +631,124 @@ const UWU_LOOPS = (() => {
     motion: (L) => {
       const open = clamp(loginOpen(L));
       return add(life(L), {
-        head: { rot: -deg(3) * L.env(0.08, 0.25) + deg(4) * open, dy: -3 * open },
+        head: { rot: -deg(3) * L.env(0.08, 0.25) + deg(4) * open },
         arm_L: { rot: -deg(22) * L.env(0.06, 0.3) },
-        body: sq(1 + 0.025 * open),
         curl: { rot: 0.1 * open },
-      });
+      }, jump(L, 0.26, 0.28, 12, { arms: 20 }));
     },
     look(L, pose, I) {
-      const open = loginOpen(L), col = mix(COL.violet, COL.mint, open);
-      const shake = deg(9) * L.env(0.1, 0.2, (u) => E.wob(u, 2.5, 1.2));
+      const open = loginOpen(L), col = open > 0.5 ? COL.mint : COL.violet;
+      const u = L.local(0.14, 0.16), shake = u < 0 ? 0 : deg(10) * Math.sin(TAU * 3 * u) * Math.pow(u, 1.5);
+      const click = L.env(0.3, 0.2, (x) => E.wob(x, 1, 1.5)) + L.env(0.84, 0.12, (x) => E.wob(x, 1, 1.5));
       return {
-        face: open > 0.5 ? face("uwu") : blink(face("neutral", { eye: { gaze: [1, -6] }, mouth: { shape: "smile", width: 0.7 } }), L, 0.92),
-        icon: icon(() => chip("lock", col, { open: clamp(open, 0, 1.1), hole: col }), { rot: shake, sc: 1 + 0.1 * L.env(0.3, 0.2, (u) => E.wob(u, 1, 1.5)) }),
-        front() { FX.burst(L, I[0], I[1], 0.31, 0.3, 56, 100, COL.mint, 8, 6); },
+        face: open > 0.5 ? face("uwu") : blink(face("neutral", { eye: { gaze: [1, -6] }, mouth: { shape: "smile", width: 0.7 } }), L, 0.18),
+        icon: icon(() => chip("lock", col, { open: clamp(open, 0, 1.1), hole: col }), { rot: shake, sc: 1 + 0.1 * click }),
+        back() { FX.burst(L, I[0], I[1], 0.31, 0.16, 54, 80, COL.mint, 8, 6); },
       };
     },
   });
 
-  // T 1.5: new-mail nudge: the envelope wiggles, a badge pops, a heart floats out
+  // T 1.5: new-mail nudge: the envelope wiggles and gets a badge, UwU looks up, hops as the flap opens
   def("email", "البريد الإلكتروني", "flow", 1.5, {
     motion: (L) => add(life(L), {
-      arm_L: { rot: -deg(28) - deg(4) * L.s(2) },
+      arm_R: { rot: -deg(12), dx: 6 }, arm_L: { rot: deg(12), dx: -6 },
       head: { rot: deg(5) + deg(2) * L.s(1) },
-      root: { dy: -6 * L.env(0, 0.25) },
-    }, { body: sq(1 - 0.03 * L.env(0, 0.12) + 0.02 * L.env(0.1, 0.15)) }),
+    }, jump(L, 0.3, 0.24, 10, { arms: 14 })),
     look(L, pose, I) {
       const flap = L.env(0.4, 0.5, (x) => E.hold(x, 0.25, 0.25));
       const bsc = L.env(0.06, 0.86, (x) => E.hold(x, 0.15, 0.12, (u) => E.outBack(u, 2.4)));
+      const g = L.env(0.02, 0.42, (x) => E.hold(x, 0.15, 0.2));
       return {
-        face: face("happy", { eye: { shape: "open", shine: 1 }, mouth: { shape: "openSmile", open: 0.25 }, blush: 1.4 }),
-        icon: icon(() => { chip("mail", COL.pink, { flap }); badgeDot(31, -31, bsc); }, { rot: deg(12) * L.env(0, 0.36, (x) => E.wob(x, 2.5, 1.3)) }),
+        face: face("happy", { eye: { shape: "open", shine: 1, gaze: [3 * g, -7 * g] }, mouth: { shape: "openSmile", open: 0.25 }, blush: 1.4 }),
+        icon: icon(() => { chip("mail", COL.pink, { flap, ink: "#d4628a" }); badgeDot(31, -31, bsc); }, { rot: deg(12) * L.env(0, 0.36, (x) => E.wob(x, 2.5, 1.3)) }),
         front() {
           const u = L.local(0.48, 0.5);
           if (u >= 0) {
-            const sc = Math.min(1, u * 5) * (1 - E.inCubic(u));
+            const sc = E.outBack(clamp(u / 0.12), 2.2) * (1 - E.inCubic(clamp((u - 0.6) / 0.4)));
             reseed(1);
-            PROPS.at(I[0] + 62 + 14 * Math.sin(TAU * u), I[1] - 20 - 80 * E.outCubic(u), 0, sc, () => PROPS.heart(14, COL.pink));
+            if (sc > 0.02) PROPS.at(I[0] + 62 + 14 * Math.sin(TAU * u), I[1] - 20 - 80 * E.outCubic(u), 0, sc, () => heartFx(15));
           }
         },
       };
     },
   });
 
-  // T 2: the two links glide together and click; sparks and a ring on the click; then part
+  // T 2: sky dots fly in, the links glide together and click (ring); later the chip flips edge-on
+  // and comes back unlinked, so the reset is hidden instead of shown as a disconnect
   def("connect_accounts", "ربط الحسابات", "flow", 2, {
     motion: (L) => add(life(L), {
       arm_R: { rot: deg(10) + deg(20) * L.env(0.08, 0.3, E.sine) }, arm_L: { rot: -deg(10) - deg(20) * L.env(0.08, 0.3, E.sine) },
       head: { rot: deg(3) * L.s(1) },
     }, jump(L, 0.3, 0.34, 14, { arms: 20 })),
     look(L, pose, I) {
-      const x1 = L.local(0.08, 0.27), xj = L.local(0.35, 0.47), x2 = L.local(0.82, 0.18);
+      const x1 = L.local(0.08, 0.27), x2 = L.local(0.82, 0.18), fl = x2 >= 0 ? E.sine(x2) : 0;
+      const joined = (L.p >= 0.35 && L.p < 0.82) || (x2 >= 0 && fl < 0.5);
       let gap = 9;
       if (x1 >= 0) gap = 9 * (1 - E.inCubic(x1));
-      else if (xj >= 0) gap = -2.5 * E.wob(xj * 2.35, 1, 2);
-      else if (x2 >= 0) gap = 9 * E.sine(x2);
-      const joined = xj >= 0;
+      else if (joined) gap = -2.5 * E.wob(clamp((L.p - 0.35) / 0.2), 1, 2);
+      const col = joined ? COL.linked : COL.sky;
+      const f = joined ? face("happy") : face("neutral", { eye: { gaze: [0, -6] }, brow: { dy: 2, tilt: -4 }, mouth: { shape: "smile", width: 0.6 } });
       return {
-        face: joined ? face("happy") : face("neutral", { eye: { gaze: [0, -6] }, brow: { dy: 2, tilt: -4 }, mouth: { shape: "smile", width: 0.6 } }),
-        icon: icon(() => chip("link", joined ? COL.mint : COL.sky, { gap }), { sc: 1 + 0.12 * L.env(0.35, 0.3, (u) => E.wob(u, 1, 1.5)) }),
-        back() { FX.ripple(L, I[0], I[1], 0.35, 0.45, 46, 120, COL.mint, 7); },
-        front() { FX.burst(L, I[0], I[1], 0.35, 0.3, 56, 98, COL.gold, 8, 6); },
+        face: blink(blink(f, L, 0.35), L, 0.91),
+        icon: icon(() => chip("link", col, { gap, bg: col }), { sc: 1 + 0.12 * L.env(0.35, 0.3, (u) => E.wob(u, 1, 1.5)), sx: Math.cos(Math.PI * fl) }),
+        back() {
+          FX.ripple(L, I[0], I[1], 0.35, 0.4, 46, 115, COL.sky, 8);
+          if (x1 >= 0) for (const sd of [-1, 1]) { reseed(sd + 5); dot(I[0] + sd * 150 * (1 - E.inCubic(x1)), I[1] + 10 * Math.sin(Math.PI * x1), 8, COL.sky); }
+        },
       };
     },
   });
 
-  // T 2: bars grow one after another (overshoot), UwU presents them; arrows rise
+  // T 2: bars grow one after another (overshoot) from a rising staircase; UwU watches, then hops
   def("results", "النتائج", "flow", 2, {
     motion: (L) => add(life(L), {
       arm_L: { rot: -deg(30) - deg(4) * L.s(2) },
-      head: { rot: deg(5) - deg(3) * L.env(0.35, 0.3) },
-      root: { dy: -7 * L.env(0.35, 0.25) },
-      body: sq(1 + 0.03 * L.env(0.35, 0.25)),
-    }),
+      head: { rot: deg(5) },
+    }, jump(L, 0.33, 0.3, 14, { arms: 22 })),
     look(L, pose, I) {
       const h = [0.35, 0.65, 1].map((v, i) => {
         const g = L.local(0.06 + i * 0.08, 0.84 - i * 0.08);
-        if (g < 0) return 0.12;
+        if (g < 0) return 0.35 * v;
         const up = E.outBack(clamp(g / 0.25), 2.2), down = E.sine(clamp((g - 0.86) / 0.14));
-        return 0.12 + (v - 0.12) * up * (1 - down);
+        return v * (0.35 + 0.65 * up * (1 - down));
       });
+      const g = L.env(0.04, 0.34, (x) => E.hold(x, 0.2, 0.2));
+      const cheer = L.local(0.36, 0.3) >= 0;
+      const f = cheer ? face("happy") : face("happy", { eye: { shape: "open", shine: 1, gaze: [2 * g, -6 * g] }, mouth: { shape: "openSmile", open: 0.35 } });
       return {
-        face: face("happy", { eye: { shape: "open", shine: 1 }, mouth: { shape: "openSmile", open: 0.35 } }),
-        icon: icon(() => chip("chart", COL.mint, { h })),
+        face: blink(blink(f, L, 0.36), L, 0.66),
+        icon: icon(() => chip("chart", COL.mint, { h }), { sc: 1 + 0.12 * L.env(0.39, 0.2, (u) => E.wob(u, 1, 1.5)) }),
         front() {
-          FX.rise(L, 3, 1, 0, -40, 520, 300, () => { thick([[0, 12], [0, -12]], 7, COL.mint); thick([[-10, -2], [0, -13], [10, -2]], 7, COL.mint); });
+          FX.rise(L, 3, 1, 0, -60, 520, 220, () => { thick([[0, 12], [0, -12]], 7, COL.mint); thick([[-10, -2], [0, -13], [10, -2]], 7, COL.mint); });
           FX.twinkle(L, [[-190, -160], [205, -60]], COL.gold, 15);
         },
       };
     },
   });
 
-  // T 2: big jump + small hop, arms high; the trophy chip shines and throws confetti
+  // T 2: big jump + small hop with arms high; the trophy shines and throws confetti from behind
   def("project_success", "نجاح المشروع", "flow", 2, {
-    motion: (L) => add(life(L), jump(L, 0, 0.5, 46, { arms: 35 }), jump(L, 0.5, 0.36, 18, { arms: 20 })),
+    motion: (L) => add(life(L), jump(L, 0, 0.5, 46, { arms: 52 }), jump(L, 0.5, 0.36, 18, { arms: 40 })),
     look(L, pose, I) {
       const glint = L.env(0.2, 0.2);
       return {
-        face: face("happy", { blush: 1.5 }),
+        face: face("happy", { blush: 1.5, mouth: { shape: "openSmile", open: 0.25 + 0.3 * L.env(0.1, 0.35) } }),
         icon: icon(() => {
           chip("trophy", COL.gold);
           if (glint > 0.03) PROPS.at(22, -24, glint, glint, () => K().wash(star4(18, 0.25), COL.white));
         }, { rot: deg(8) * L.env(0.2, 0.4, (x) => E.wob(x, 1.5, 1.5)), sc: 1 + 0.18 * L.env(0.18, 0.35, (x) => E.wob(x, 1.2, 1.6)) }),
-        back() { FX.ripple(L, I[0], I[1], 0.2, 0.45, 46, 125, COL.gold, 7); },
-        front() {
-          FX.pop(L, I[0], I[1], 0.2, 0.75, 10, 300, (i) => PROPS.confettiPiece(17, 9, [COL.pink, COL.gold, COL.mint, COL.violet, COL.sky][i % 5]));
-          FX.twinkle(L, [[-200, -120], [210, -30]], COL.gold, 16);
+        back() {
+          FX.ripple(L, I[0], I[1], 0.2, 0.3, 46, 100, COL.gold, 8);
+          FX.pop(L, I[0], I[1], 0.2, 0.75, 10, 300, (i) => PROPS.confettiPiece(17, 9, [COL.pink, COL.gold, COL.mint, COL.violet, COL.sky][i % 5]), 40);
         },
+        front() { FX.twinkle(L, [[-200, -120], [210, -30]], COL.gold, 16); },
       };
     },
   });
 
   // ---- problems ----
 
-  // T 1.5: alarm: the warning chip shakes, UwU jolts (surprised), then worries; red pulse
+  // T 1.5: alarm: the warning chip shakes, UwU jolts (surprised), then melts into worry; red pulse
   def("problem", "يوجد مشكلة", "problem", 1.5, {
     motion: (L) => add(life(L, 1, 0.6), jump(L, 0, 0.3, 12), {
       root: { dx: 4 * L.env(0.05, 0.3, (x) => E.wob(x, 4, 1)) },
@@ -708,31 +756,34 @@ const UWU_LOOPS = (() => {
       head: { dy: 3 },
     }),
     look(L, pose, I) {
-      const jolt = L.local(0, 0.28) >= 0;
+      // the startle snaps in on the beat; the way back to worry is a 0.15 s blend under a blink
+      const k = E.sine(clamp((L.p - 0.24) / 0.1));
+      const f = faceLerp(face("surprised"), face("sad", { eye: { gaze: [0, -3] } }), k);
       return {
-        face: jolt ? face("surprised") : blink(face("sad", { eye: { gaze: [0, -3] } }), L, 0.75),
+        face: blink(blink(f, L, 0.29), L, 0.75),
         icon: icon(() => chip("warn", COL.gold), { rot: deg(14) * L.env(0.02, 0.4, (x) => E.wob(x, 3, 1.4)), sc: 1 + 0.15 * L.env(0.02, 0.25, (x) => E.wob(x, 1, 1.5)) }),
-        back() { FX.ripple(L, I[0], I[1], 0.03, 0.5, 46, 118, COL.red, 7); FX.ripple(L, I[0], I[1], 0.5, 0.5, 46, 100, COL.red, 5); },
+        back() { FX.ripple(L, I[0], I[1], 0.03, 0.42, 46, 112, COL.red, 8); FX.ripple(L, I[0], I[1], 0.5, 0.42, 46, 100, COL.red, 6); },
         front() { FX.shock(L, pose, 0.02, 0.3); FX.sweat(L, pose, 0.3, 0.65); },
       };
     },
   });
 
-  // T 2: looks left … right … (held looks); "?" pops on the side it looks to
-  const look404 = (L) => Math.tanh(3 * L.s(1)) / Math.tanh(3);
+  // T 2: looks left … right … (held looks with a settle), "?" pops on the side it looks to.
+  // The body leans from the hips; the feet stay planted.
+  const look404 = (L) => Math.tanh(3 * L.s(1)) / Math.tanh(3) + 0.18 * (E.wob(L.local(0.03, 0.3), 1, 2) - E.wob(L.local(0.53, 0.3), 1, 2));
   def("error404", "الصفحة غير موجودة", "problem", 2, {
     motion(L) {
       const look = look404(L);
       return add(life(L), {
-        head: { rot: deg(7) * look }, root: { dx: 6 * look }, face: { dx: 7 * look },
+        head: { rot: deg(12) * look, dy: 4 * Math.abs(look) }, face: { dx: 12 * look }, body: { rot: deg(2.5) * look },
         curl: { rot: 0.06 * look }, tuft_L: { rot: -0.05 * look },
       });
     },
     look(L, pose, I) {
       const look = look404(L);
       return {
-        face: blink(face("neutral", { eye: { gaze: [7 * look, -3] }, brow: { tilt: 10, dy: -3 }, mouth: { shape: "wavy", width: 0.55 } }), L, 0.5),
-        icon: icon(() => chip("q404", COL.violet), { rot: -deg(9) * look }),
+        face: blink(face("neutral", { eye: { gaze: [10 * look, -3] }, brow: { tilt: 10, dy: -3 }, mouth: { shape: "wavy", width: 0.55 } }), L, 0.5),
+        icon: icon(() => chip("q404", COL.violet), { rot: -deg(9) * look404(L.lag(0.08)) }),
         front() {
           [[0.1, 1], [0.6, -1]].forEach(([at, sd], i) => {
             const u = L.local(at, 0.36);
@@ -747,41 +798,43 @@ const UWU_LOOPS = (() => {
     },
   });
 
-  // T 2: the factory chip smokes; a gear jumps out of it and falls; UwU flinches, worries
+  // T 2: the factory chip smokes; a gear jumps out and falls, UwU flinches and its eyes follow it
   def("factory_problem", "مشكلة في المصنع", "problem", 2, {
     motion: (L) => add(life(L, 1, 0.5), {
-      head: { rot: -deg(3), dy: 4 - 6 * L.env(0.28, 0.22) },
-      body: sq(1 + 0.04 * L.env(0.28, 0.2) - 0.03 * L.env(0.4, 0.2)),
+      head: { rot: -deg(3), dy: 4 - 12 * L.env(0.28, 0.22) },
       curl: { rot: -0.18 + 0.2 * L.env(0.28, 0.2) }, tuft_L: { rot: 0.28 - 0.25 * L.env(0.28, 0.2) },
-      arm_R: { rot: -deg(8) + deg(18) * L.env(0.28, 0.3) }, arm_L: { rot: deg(8) - deg(18) * L.env(0.28, 0.3) },
-    }),
+      arm_R: { rot: -deg(8) }, arm_L: { rot: deg(8) },
+    }, jump(L, 0.25, 0.3, 14, { arms: 30 })),
     look(L, pose, I) {
+      const u = L.local(0.28, 0.6);
+      const f = L.local(0.28, 0.2) >= 0 ? face("surprised")
+        : face("sad", { eye: { gaze: u >= 0 ? [lerp(3, 8, u), lerp(-8, 7, u)] : [0, 3] } });
       return {
-        face: L.local(0.28, 0.2) >= 0 ? face("surprised") : face("sad"),
+        face: blink(f, L, 0.48),
         icon: icon(() => chip("factory", COL.red), { rot: deg(10) * L.env(0.26, 0.3, (x) => E.wob(x, 3, 1.3)) }),
         back() {
+          // smoke from the chimney: round puffs that rise, grow and thin out
           for (let i = 0; i < 2; i++) {
-            const u = L.fr(2, i * 0.5);
+            const v = L.fr(2, i * 0.5), a = 230 * (1 - E.inCubic(v));
             reseed(i);
-            PROPS.at(I[0] + 20 + 18 * u, I[1] - 44 - 70 * u, 0, (0.5 + 0.9 * u) * Math.min(1, u * 6), () => PROPS.puff(14, COL.smoke, 230 * (1 - E.inCubic(u))));
+            PROPS.at(I[0] + 12 + 6 * v, I[1] - 22 - 50 * v, 0, (0.6 + 0.6 * v) * Math.min(1, v * 6), () => { dot(-7, 2, 8, COL.smoke, a); dot(0, -4, 10, COL.smoke, a); dot(8, 2, 7, COL.smoke, a); });
           }
+          FX.burst(L, I[0] + 30, I[1] - 20, 0.27, 0.25, 30, 66, COL.gold, 6, 5);
         },
         front() {
-          const u = L.local(0.28, 0.6);
           if (u >= 0) {
             const x = I[0] + 34 + 150 * u, y = I[1] - 140 * u + 560 * u * u, sc = Math.min(1, u * 8) * (1 - E.inCubic(clamp((u - 0.7) / 0.3)));
             reseed(2);
-            if (sc > 0.04) PROPS.at(x, y, TAU * u * 1.5, sc * 0.8, () => GLYPH.gear({ rot: 0, color: COL.steel, hole: COL.white }));
+            if (sc > 0.04) PROPS.at(x, y, TAU * u * 1.5, sc * 1.05, () => GLYPH.gear({ rot: 0, color: COL.gearDeep, hole: COL.white }));
           }
-          FX.burst(L, I[0] + 30, I[1] - 20, 0.27, 0.25, 30, 66, COL.gold, 6, 5);
           FX.sweat(L, pose, 0.45, 0.5);
         },
       };
     },
   });
 
-  // Integration problems share one layout: the brand pill with a red ✕ badge.
-  //   pop:    the badge pops, UwU startles with a hop        (n8n)
+  // Integration problems share one layout: the brand pill with a red ✕ badge (always visible).
+  //   pop:    the badge bounces, UwU startles with a hop       (n8n)
   //   snap:   the pill drops and swings on a snapped hinge    (Zapier)
   //   glitch: the pill stutters sideways with scan bars      (Albato)
   const glitchAt = (p) => [0.12, 0.17, 0.52, 0.56, 0.6].some((a) => p >= a && p < a + 0.025);
@@ -795,12 +848,13 @@ const UWU_LOOPS = (() => {
       },
       look(L, pose, I) {
         if (style === "pop") {
-          const bsc = L.env(0.14, 0.82, (x) => E.hold(x, 0.18, 0.14, (u) => E.outBack(u, 2.6)));
+          const bsc = 1 + 0.25 * L.env(0.14, 0.3, (x) => E.wob(x, 1.2, 1.4));
           const startled = L.local(0.1, 0.35) >= 0;
+          const f = startled ? face("surprised", { eye: { iris: 0.85 } }) : face("neutral", { eye: { gaze: [2, -6] }, brow: { tilt: 12 }, mouth: { shape: "wavy", width: 0.6 } });
           return {
-            face: startled ? face("surprised", { eye: { iris: 0.85 } }) : blink(face("neutral", { eye: { gaze: [2, -6] }, brow: { tilt: 12 }, mouth: { shape: "wavy", width: 0.6 } }), L, 0.7),
-            icon: icon(() => pill(name, color, { badge: bsc }), { rot: deg(5) * L.env(0.14, 0.4, (x) => E.wob(x, 2, 1.4)) }),
-            front() { FX.burst(L, I[0] + pillWidth(name) / 2 - 6, I[1] - 26, 0.15, 0.3, 26, 60, COL.red, 7, 4.5); },
+            face: blink(blink(f, L, 0.45), L, 0.8),
+            icon: icon(() => pill(name, color, { badge: bsc }), { sc: 1.1, rot: deg(5) * L.env(0.14, 0.4, (x) => E.wob(x, 2, 1.4)) }),
+            front() { FX.burst(L, I[0] + 1.1 * (pillWidth(name) / 2 - 6), I[1] - 29, 0.15, 0.3, 30, 64, COL.red, 7, 4.5); },
           };
         }
         if (style === "snap") {
@@ -808,14 +862,14 @@ const UWU_LOOPS = (() => {
           const swing = x < 0 ? 0 : x < 0.1 ? deg(16) * E.inCubic(x / 0.1) : x > 0.85 ? deg(16) * (1 - E.sine((x - 0.85) / 0.15)) : deg(16) + deg(9) * E.wob((x - 0.1) / 0.75, 2, 1.5);
           return {
             face: blink(face("sad", { eye: { gaze: [2, -6] } }), L, 0.05),
-            icon: icon(() => pill(name, color), { rot: swing, dy: 10 * Math.sin(swing) }),
-            front() { FX.burst(L, I[0] - 50, I[1] - 10, 0.1, 0.28, 18, 50, COL.gold, 6, 4.5); FX.sweat(L, pose, 0.3, 0.6); },
+            icon: icon(() => pill(name, color), { sc: 1.1, rot: swing, dy: 10 * Math.sin(swing) }),
+            front() { FX.burst(L, I[0] - 55, I[1] - 10, 0.1, 0.28, 18, 50, COL.gold, 6, 4.5); FX.sweat(L, pose, 0.3, 0.6); },
           };
         }
         const g = glitchAt(L.p), k = Math.floor(L.p * 120);
         return {
           face: face("shy", { mouth: { shape: "wavy", width: 0.6 }, eye: { gaze: [3, -5] } }),
-          icon: icon(() => pill(name, color), { dx: g ? 28 * (hash(k + 1) - 0.5) : 0, rot: g ? deg(3) * (hash(k + 2) - 0.5) : 0 }),
+          icon: icon(() => pill(name, color), { sc: 1.1, dx: g ? 28 * (hash(k + 1) - 0.5) : 0, rot: g ? deg(3) * (hash(k + 2) - 0.5) : 0 }),
           back() { FX.scan(I[0], I[1], g, k); },
           front() { FX.sweat(L, pose, 0.3, 0.6); },
         };
@@ -826,32 +880,35 @@ const UWU_LOOPS = (() => {
   integration("zapier_problem", "مشكلة ربط Zapier", "Zapier", COL.orange, "snap");
   integration("albato_problem", "مشكلة ربط Albato", "Albato", "#7d73d9", "glitch");
 
-  // ---- AI assistant (hovers above the ground) ----
-  const float = (L, k = 1, h = 7) => ({ root: { dy: -14 - h * L.s(k) }, shadow: { sx: 0.86 - 0.05 * L.s(k), sy: 0.86 - 0.05 * L.s(k) } });
+  // ---- AI assistant (hovers clear of the ground) ----
+  const float = (L, k = 1, h = 10) => ({ root: { dy: -30 - h * L.s(k) }, shadow: { sx: 0.78 - 0.08 * L.s(k), sy: 0.78 - 0.08 * L.s(k) } });
 
-  // T 2.5: hovering and blinking; the sparkle chip turns a quarter turn and twinkles
+  // T 2.5: hovering and blinking; the sparkle chip sways and its small star pulses
   def("ai_idle", "المساعد — جاهز", "ai", 2.5, {
     motion: (L) => add(life(L), float(L), { head: { rot: deg(3) * L.s(1, 0.1) }, curl: { rot: 0.05 * L.s(1, 0.25) } }),
     look(L, pose, I) {
       return {
         face: blink(face("neutral", { mouth: { shape: "smile", width: 0.9 } }), L, 0.62),
-        icon: icon(() => chip("sparkle", COL.violet, { rot: (Math.PI / 2) * E.sine(L.p), k: 1 + 0.1 * L.s(2), k2: 0.7 + 0.5 * L.env(0.4, 0.3) })),
-        front() { FX.twinkle(L, [[-190, -180], [205, -90], [-170, 40]], COL.pink, 14); },
+        icon: icon(() => chip("sparkle", COL.violet, { rot: deg(8) * L.s(1), k: 1 + 0.06 * L.s(2), k2: 0.85 + 0.25 * L.env(0.4, 0.3) })),
+        front() { FX.twinkle(L, [[-190, -180], [205, -90], [-170, 40]], COL.violet, 18); },
       };
     },
   });
 
-  // T 1.5: tuft up like an ear, head tilted; sound waves around the mic chip twice per loop
+  // T 1.5: tuft perks like an ear and the head tilts in on each incoming wave (waves travel inward)
   def("ai_listening", "المساعد — يستمع", "ai", 1.5, {
-    motion: (L) => add(life(L), float(L), {
-      head: { rot: -deg(7) + deg(2) * L.s(2) }, tuft_L: { rot: -0.38 + 0.06 * L.s(4) }, face: { dx: -4 },
-      body: sq(1 + 0.008 * L.s(2)),
-    }),
+    motion: (L) => {
+      const hear = L.env(0, 0.22) + L.env(0.5, 0.22), lean = L.env(0.03, 0.25) + L.env(0.53, 0.25);
+      return add(life(L), float(L), {
+        head: { rot: -deg(7) - deg(3) * lean }, tuft_L: { rot: -0.38 - 0.18 * hear }, face: { dx: -4 },
+        body: sq(1 + 0.008 * L.s(2)),
+      });
+    },
     look(L, pose, I) {
       return {
-        face: blink(face("neutral", { eye: { open: 1.06, gaze: [5, -2], shine: 1 }, brow: { dy: -3 }, mouth: { shape: "o", open: 0.2, width: 0.7 } }), L, 0.8),
+        face: blink(face("neutral", { eye: { open: 1.12, gaze: [5, -2], shine: 1 }, brow: { dy: -6 }, mouth: { shape: "o", open: 0.35, width: 0.7 } }), L, 0.8),
         icon: icon(() => chip("mic", COL.sky), { sc: 1 + 0.05 * L.env(0, 0.25) + 0.05 * L.env(0.5, 0.25) }),
-        back() { FX.sound(L, I[0], I[1], 2, COL.sky); },
+        back() { FX.sound(L, I[0], I[1], 2, COL.sky, 52, true); },
       };
     },
   });

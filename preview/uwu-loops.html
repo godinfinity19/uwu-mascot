@@ -29,11 +29,13 @@
     const still = params.has("still");
     const FPS = 60;
     const BG = { paper: "#f9f1e6", black: "#000000", white: "#ffffff", clear: null };
+    // &size=N renders on an N×N canvas (the scene is designed on 720 and scaled to fit)
+    const SIZE = +(params.get("size") || 720);
     let target = 0, targetBg = params.get("bg") || "paper", t0 = 0;
 
     async function setup() {
       window.UWU_FONT = await loadFont("../assets/fonts/DejaVuSans-Bold.ttf");
-      createCanvas(720, 720, WEBGL).parent("main");
+      createCanvas(SIZE, SIZE, WEBGL).parent("main");
       pixelDensity(1);
       if (still) {
         noLoop();
@@ -58,7 +60,7 @@
     function draw() {
       if (!window.UWU_READY) return;
       const t = still ? target / FPS : (millis() - t0) / 1000;
-      LOOP_RUNNER.frame(id, t, { bg: BG[targetBg] });
+      LOOP_RUNNER.frame(id, t, { bg: BG[targetBg], zoom: SIZE / 720 });
     }
   </script>
 </body>
