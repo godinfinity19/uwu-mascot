@@ -96,7 +96,7 @@
       let el;
       if (reduced()) {
         el = document.createElement("img");
-        el.src = url("png");
+        el.src = own.png || own.webp || base + ".png";
       } else if (noVp9Alpha || forceImg) {
         el = document.createElement("img");
         el.src = url("webp");
