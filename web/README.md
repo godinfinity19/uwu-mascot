@@ -1,6 +1,6 @@
 # UwU status loops for the website
 
-22 short loops at 60 fps on a transparent background. In each one, UwU acts out a product state, a small icon chip sits above the head, and a few light effects play around it. Each loop's last frame joins its first, so it can repeat with no visible cut.
+22 smooth loops at 60 fps (3–5 s each; the T column below is the base timing, played at half speed) on a transparent background. In each one, UwU acts out a product state, a small icon chip sits above the head, and a few light effects play around it. Each loop's last frame joins its first, so it can repeat with no visible cut.
 
 ```html
 <script src="/uwu/uwu-status.js"></script>

@@ -500,7 +500,10 @@ const UWU_LOOPS = (() => {
   //   chip trails the character's moves.
 
   const LOOPS = {};
-  const def = (id, title, group, T, spec) => (LOOPS[id] = { id, title, group, T, ...spec });
+  // SLOW stretches every loop in time (the client wants calm, smooth motion, not speed).
+  // 6·T stays a multiple of 3 for T in {3, 4, 5}, so the texture boil still repeats with the loop.
+  const SLOW = 2;
+  const def = (id, title, group, T, spec) => (LOOPS[id] = { id, title, group, T: T * SLOW, ...spec });
   const LAG = 0.04;
   // icon = [dx, dy, scale, rot, drawFn, sx] relative to I
   const icon = (draw, { dx = 0, dy = 0, sc = 1, rot = 0, sx = 1 } = {}) => [dx, dy, sc, rot, draw, sx];
