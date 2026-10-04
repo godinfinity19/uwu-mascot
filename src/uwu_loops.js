@@ -376,6 +376,8 @@ const UWU_LOOPS = (() => {
   // each particle gets its own seed so items appearing or leaving never reshuffle the others
   let fxSeed = 0;
   const reseed = (i) => K().setSeed(fxSeed + i * 13);
+  // effects never come closer than 30 px (720 canvas) to the top edge, even at the top of a jump
+  const SAFE_TOP = -330;
 
   const FX = {
     // one ring emitted at `at`, expanding r0 → r1 and fading over len
@@ -383,7 +385,8 @@ const UWU_LOOPS = (() => {
       const u = L.local(at, len);
       if (u < 0) return;
       // fades by thinning, never by alpha: low-alpha washes turn grey in p5.brush
-      const r = lerp(r0, r1, E.outCubic(u)), ww = w * (1 - E.inCubic(u));
+      const r1s = Math.max(r0 + 12, Math.min(r1, y - SAFE_TOP - w / 2));
+      const r = lerp(r0, r1s, E.outCubic(u)), ww = w * (1 - E.inCubic(u));
       reseed(90);
       if (ww > 1.2) ring(x, y, r, ww, color, 255);
     },
@@ -395,7 +398,9 @@ const UWU_LOOPS = (() => {
       reseed(91);
       for (let i = 0; i < n; i++) {
         const a = (i / n) * TAU + rot, c = Math.cos(a), s = Math.sin(a);
-        if (head - tail > 1.5) thick([[x + c * tail, y + s * tail], [x + c * head, y + s * head]], w * (1 - 0.6 * u), color);
+        const k = s < -0.05 ? Math.min(1, (y - SAFE_TOP - w / 2) / (-s * r1)) : 1; // shorten rays that would leave the top
+        const h = head * k, t = tail * k;
+        if (h - t > 1.5) thick([[x + c * t, y + s * t], [x + c * h, y + s * h]], w * (1 - 0.6 * u), color);
       }
     },
     // fixed-position sparkles that each twinkle once per loop, staggered
@@ -430,7 +435,10 @@ const UWU_LOOPS = (() => {
       const u = L.local(at, len);
       if (u < 0) return;
       for (let i = 0; i < n; i++) {
-        const a = -Math.PI / 2 + (i / (n - 1) - 0.5) * 2.6 + 0.2 * (hash(i) - 0.5), v = speed * (0.75 + 0.5 * hash(i + 3));
+        const a = -Math.PI / 2 + (i / (n - 1) - 0.5) * 2.6 + 0.2 * (hash(i) - 0.5), sa = Math.sin(a);
+        let v = speed * (0.75 + 0.5 * hash(i + 3));
+        // cap the launch speed so the top of the arc, y + sa·r0 − (v·sa)²/2080, stays below SAFE_TOP + 12
+        if (sa < -0.05) v = Math.min(v, Math.sqrt(2080 * Math.max(0, y + sa * r0 - SAFE_TOP - 12)) / -sa);
         const px = x + Math.cos(a) * (r0 + v * u), py = y + Math.sin(a) * (r0 + v * u) + 520 * u * u;
         const sc = Math.min(1, 6 * u) * (1 - E.inCubic(u));
         if (sc > 0.04) { reseed(i); PROPS.at(px, py, TAU * u * (i % 2 ? 1.5 : -1.5), sc, () => draw(i)); }
